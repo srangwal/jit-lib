@@ -1,5 +1,7 @@
 # Small experiments you can run and change
 
+These examples accompany the [Python exploration record](../python-exploration.md). They remain useful learning material; general protected execution is deferred behind the supervised pilot in the [current plan](../../execution-plan.md).
+
 These four experiments explain the evaluation problems behind Phase 2 of
 Just-in-Time Library. They use a toy addition function and Python's standard
 library. You do not need our candidate repositories, Docker, Codex, a model,
@@ -23,7 +25,7 @@ directory when given absolute script paths.
 From the project root:
 
 ```sh
-cd docs/reward-hacking
+cd docs/learnings/reward-hacking
 ```
 
 Read and run them in this order:
@@ -188,4 +190,4 @@ These examples simplify [F-01 and F-02](../reward-hacking-findings.md#f-01-a-lib
 and [F-13](../reward-hacking-findings.md#f-13-the-yaml-adapter-loses-shared-and-recursive-values).
 The original experiments include additional controls and limitations described
 there. These teaching files do not replace their evidence or resolve the full
-protection problem in [Phase 2](../execution-plan.md#phase-2-prove-execution-and-isolation-feasibility).
+protection problem in [Phase 2](../../execution-plan.md#phase-2-prove-execution-and-isolation-feasibility).

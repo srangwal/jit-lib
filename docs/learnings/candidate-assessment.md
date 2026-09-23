@@ -6,7 +6,7 @@ Baseline research recorded: 2026-09-20. Workload-source decision confirmed: 2026
 
 Just-in-Time Library will specialize an external library for the way a particular application uses it. Before building that system, we need two plausible demonstrations: applications with real inputs, meaningful library costs, and reproducible correctness checks. This document explains our recommendations and the experiments supporting them.
 
-Here, **qualification** means establishing that a pair is suitable for further work. A **baseline** is the unchanged application and original library. A **corpus** is a collection of actual input files. A **replay** runs a recorded job on those inputs again. None of the timings below measure a specialized library; no specialization has been written. The detailed rules come from the [scope](scope.md), and the work belongs to Phase 1 of the [execution plan](execution-plan.md).
+Here, **qualification** means establishing that a pair is suitable for further work. A **baseline** is the unchanged application and original library. A **corpus** is a collection of actual input files. A **replay** runs a recorded job on those inputs again. None of the timings below measure a specialized library; no specialization has been written. The detailed rules come from the [scope](../scope.md), and the work belongs to Phase 1 of the [execution plan](../execution-plan.md).
 
 ## Earlier recommendation
 

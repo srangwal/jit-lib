@@ -2,7 +2,7 @@
 
 Updated: 2026-09-21.
 
-**Milestone update, 2026-09-23:** the user approved one supervised non-Python pilot before reusable automation and general adversarial protection. The controls below remain research for the later system. The pilot keeps original tests, independent output checks, edge cases, held-out inputs, reviewed changes, and the existing performance targets, while explicitly making no claim of general hostile-code protection. See the [execution plan](execution-plan.md#next-milestone-one-supervised-pilot).
+**Milestone update, 2026-09-23:** the user approved one supervised non-Python pilot before reusable automation and general adversarial protection. The controls below remain research for the later system. The pilot keeps original tests, independent output checks, edge cases, held-out inputs, reviewed changes, and the existing performance targets, while explicitly making no claim of general hostile-code protection. See the [execution plan](../execution-plan.md#next-milestone-one-supervised-pilot).
 
 Just-in-Time Library will ask an agent to make a dependency faster while preserving application behavior. It must reject a “success” obtained by skipping work, hiding errors, falsifying tests, or reporting measurements that never happened. This document connects published research and our local experiments to defenses we still need to design and validate.
 
@@ -10,7 +10,7 @@ Just-in-Time Library will ask an agent to make a dependency faster while preserv
 
 The recommendation combines two kinds of protection. A **specification-aware audit** reviews code against intended application behavior and discovers missing tests. **Execution isolation** prevents candidate code from changing the checker or its results. If Unicode behavior lacks a test, an audit can find the omission; if the library disables the runner, adding another test in that same process will not protect it. We need both, along with source-backed workloads and independent reproduction.
 
-This is research and a proposed design direction under the [scope](scope.md). It is not implemented protection, an agent-count decision, a runtime change, or an extension into production deployment. [Local findings](reward-hacking-findings.md) provide executed evidence, including limited successful defenses and an adapter defect. Phase 2 remains open for the full real application–library pairs.
+This is research and a proposed design direction under the [scope](../scope.md). It is not implemented protection, an agent-count decision, a runtime change, or an extension into production deployment. [Local findings](reward-hacking-findings.md) provide executed evidence, including limited successful defenses and an adapter defect. Phase 2 remains open for the full real application–library pairs.
 
 We cannot enumerate every future attack or prove immunity through finite tests. The practical deliverable is a catalog of concrete failure mechanisms, proposed controls, and evidence showing which representative cases were actually rejected. Passing checks remains bounded evidence about supported behavior.
 

@@ -1,6 +1,6 @@
 # Python exploration: results and why we moved on
 
-Archived: 2026-09-23. This summarizes the recorded investigation; creating this document did not rerun the experiments.
+Exploration record updated: 2026-09-23. This summarizes the recorded investigation; creating this document did not rerun the experiments.
 
 We investigated two Python application–library pairs and several ways to protect their tests from generated library code. Original applications built, their ordinary suites passed, and real workloads ran reproducibly. We also demonstrated a library reporting test success without executing assertions. Separating tests from library execution defeated that attack in small examples, but changed legitimate Python behavior in larger ones. Later experiments repaired individual problems without establishing one complete, faithful, protected arrangement.
 
@@ -23,7 +23,7 @@ Five-run baseline medians were approximately 1.203 seconds for Kubespray, 0.540 
 
 Standalone baseline reproduction succeeded. A comparison initially found process-dependent object addresses in one generated HTTPX page. A narrow, baseline-derived normalization handled those addresses while retaining checks on all other content and rejecting deliberately altered outputs. The strict comparison failure and raw records were preserved. Full ordinary suites also passed in Linux containers after missing locale and native Tidy prerequisites were supplied without changing tests or skip rules.
 
-Exact revisions, commands, counts, timing limitations, and comparison rules are in the [candidate assessment](../candidate-assessment.md). Linux evidence is in the [feasibility report](../execution-feasibility.md#original-full-suite-compatibility-on-linux). These are ordinary compatibility results: tests and library code still shared an interpreter.
+Exact revisions, commands, counts, timing limitations, and comparison rules are in the [candidate assessment](candidate-assessment.md). Linux evidence is in the [feasibility report](execution-feasibility.md#original-full-suite-compatibility-on-linux). These are ordinary compatibility results: tests and library code still shared an interpreter.
 
 ## 2. What execution feasibility established
 
@@ -33,7 +33,7 @@ The experiments also exercised restricted filesystem access, separation of model
 
 Several failures were in our own experiment tooling. A reproduction created Python bytecode in a directory required to stay unchanged; the recorder was fixed and rerun without weakening that requirement. Earlier sandbox setup failures were retained. These were not evidence of an agent deliberately cheating.
 
-The [feasibility results](../execution-feasibility.md#results-and-evidence) and findings [F-03 through F-08](../reward-hacking-findings.md#f-03-success-shaped-output-and-exit-status-can-disagree-with-actual-work) document these controls and their limits. Passing bounded probes did not establish protection against every possible attack.
+The [feasibility results](execution-feasibility.md#results-and-evidence) and findings [F-03 through F-08](reward-hacking-findings.md#f-03-success-shaped-output-and-exit-status-can-disagree-with-actual-work) document these controls and their limits. Passing bounded probes did not establish protection against every possible attack.
 
 ## 3. The central failure: unchanged tests can report false success
 
@@ -43,7 +43,7 @@ The test files stayed unchanged. The runner printed the expected test count and 
 
 This demonstrated three distinct facts: protecting files does not protect live interpreter state; a reported test count does not prove assertions ran; and matching a finite set of application outputs does not establish repository-test integrity. A container around both library and tests protects the outside controller, but leaves this shared-interpreter relationship intact.
 
-The user initially required the reusable system to protect repository assertions as well as external output checks. We therefore could not close Phase 2 merely by running the original suites inside a container. See [F-01](../reward-hacking-findings.md#f-01-a-library-can-make-repository-tests-report-success-without-running-their-assertions) for the full code and exact sequence. These attack variants were deliberately constructed experiments, not observed misconduct by the live coding agent.
+The user initially required the reusable system to protect repository assertions as well as external output checks. We therefore could not close Phase 2 merely by running the original suites inside a container. See [F-01](reward-hacking-findings.md#f-01-a-library-can-make-repository-tests-report-success-without-running-their-assertions) for the full code and exact sequence. These attack variants were deliberately constructed experiments, not observed misconduct by the live coding agent.
 
 ## 4. Separate processes worked for simple interfaces
 
@@ -53,7 +53,7 @@ For the simple fixture function, this worked. Correct answers passed, wrong answ
 
 A related timer experiment replaced the worker's clock with a function returning zero. The parent's clock still measured elapsed execution. That protected the tested timing boundary, but did not establish how to attribute logical library work within a complete application.
 
-We also exercised a small subset of SkyDiscover's suite and generated-test-validation helpers. A test could distinguish ordinary wrong output while still being defeated by runner forgery. This showed that validating a test against one deliberate fault does not protect it against all other faults. We did not execute or defeat the complete upstream auditor or workflow. See [F-02](../reward-hacking-findings.md#f-02-separating-assertions-from-candidate-execution-defeats-the-fixture-attack), [F-04](../reward-hacking-findings.md#f-04-a-candidate-can-replace-an-in-process-clock), and [F-05](../reward-hacking-findings.md#f-05-passing-mutation-validation-does-not-protect-a-test-runner).
+We also exercised a small subset of SkyDiscover's suite and generated-test-validation helpers. A test could distinguish ordinary wrong output while still being defeated by runner forgery. This showed that validating a test against one deliberate fault does not protect it against all other faults. We did not execute or defeat the complete upstream auditor or workflow. See [F-02](reward-hacking-findings.md#f-02-separating-assertions-from-candidate-execution-defeats-the-fixture-attack), [F-04](reward-hacking-findings.md#f-04-a-candidate-can-replace-an-in-process-clock), and [F-05](reward-hacking-findings.md#f-05-passing-mutation-validation-does-not-protect-a-test-runner).
 
 ## 5. Real Python interfaces made separation difficult
 
@@ -76,7 +76,7 @@ The investigation progressed through these bounded results:
 
 An additional F-16 review found that recorded evaluator evidence itself could remain aliased to mutable application data. The fix separated saved evidence from live objects and added an executed regression check. Protecting test code is insufficient if candidate-driven changes can alter the evidence already recorded.
 
-The [numbered findings](../reward-hacking-findings.md#f-09-selected-real-library-tests-retain-protected-assertions-across-a-process-boundary) preserve the exact cases, counts, failed attempts, and limitations. The prototypes had different rules for objects, exceptions, imports, and lifetimes. We never demonstrated that combining them preserved complete original suites under one protection model.
+The [numbered findings](reward-hacking-findings.md#f-09-selected-real-library-tests-retain-protected-assertions-across-a-process-boundary) preserve the exact cases, counts, failed attempts, and limitations. The prototypes had different rules for objects, exceptions, imports, and lifetimes. We never demonstrated that combining them preserved complete original suites under one protection model.
 
 ## 6. Valid messages did not settle faithful result capture
 
@@ -84,7 +84,7 @@ The parent could validate that a message had the expected structure. A separate 
 
 Source review found that the library and the code packaging its return value shared a worker interpreter. Protecting that packaging code's file did not itself establish that its live operations were beyond candidate influence. Checking a reconstructed parent object's type or identity therefore did not automatically establish the corresponding property of the actual library result.
 
-This was a source-reviewed trust assumption, not an executed new bypass. Automatic safety review blocked the proposed adversarial experiment before attack code or results were produced. The record explicitly preserves that distinction. See [F-20](../reward-hacking-findings.md#f-20-valid-messages-do-not-establish-faithful-result-capture).
+This was a source-reviewed trust assumption, not an executed new bypass. Automatic safety review blocked the proposed adversarial experiment before attack code or results were produced. The record explicitly preserves that distinction. See [F-20](reward-hacking-findings.md#f-20-valid-messages-do-not-establish-faithful-result-capture).
 
 ## 7. A different Python engine did not complete the solution
 
@@ -96,7 +96,7 @@ The unchanged Markdown recursion test and all 88 API tests passed in one restric
 
 A separate two-context fixture preserved several interactions but changed an exact-list-type check and raised `RecursionError` in a combined inheritance/override/`super()` operation. Three dependent checks did not run. These compatibility and two-context runs had source/result review but no independent execution repeat. Complete original suites were not run through a protected arrangement, and GraalPy was never adopted.
 
-See [F-21](../reward-hacking-findings.md#f-21-a-protected-host-still-needs-faithful-python-operations) and the [engine investigation](../execution-feasibility.md#authorized-investigation-a-separate-engine-for-correctness-tests). These failures describe the tested arrangements, not every possible Python design.
+See [F-21](reward-hacking-findings.md#f-21-a-protected-host-still-needs-faithful-python-operations) and the [engine investigation](execution-feasibility.md#authorized-investigation-a-separate-engine-for-correctness-tests). These failures describe the tested arrangements, not every possible Python design.
 
 ## 8. Why we stopped this path
 
@@ -117,10 +117,10 @@ Keep these practical lessons: validate actual artifacts rather than pass message
 ## Evidence and reading guide
 
 - [Current scope](../scope.md) and [execution plan](../execution-plan.md): authoritative current decisions and next milestone.
-- [Candidate assessment](../candidate-assessment.md): original Python versions, real workloads, tests, timings, and reproduction.
-- [Execution feasibility](../execution-feasibility.md): execution environment, isolation checks, and unresolved integration work.
-- [Findings F-01–F-21](../reward-hacking-findings.md): detailed mechanisms, evidence, and limits.
-- [Runnable teaching examples](../reward-hacking/README.md): small complete programs for exploring the original problems.
-- [Defense investigation](../reward-hacking-defense.md) and [SkyDiscover assessment](../skydiscover-assessment.md): related research and proposed controls, distinguished from implementation.
+- [Candidate assessment](candidate-assessment.md): original Python versions, real workloads, tests, timings, and reproduction.
+- [Execution feasibility](execution-feasibility.md): execution environment, isolation checks, and unresolved integration work.
+- [Findings F-01–F-21](reward-hacking-findings.md): detailed mechanisms, evidence, and limits.
+- [Runnable teaching examples](reward-hacking/README.md): small complete programs for exploring the original problems.
+- [Defense investigation](reward-hacking-defense.md) and [SkyDiscover assessment](skydiscover-assessment.md): related research and proposed controls, distinguished from implementation.
 
-Raw experiments were stored outside this repository, principally under `/private/tmp/jit-lib-qualification.UoOrTd` and `/private/tmp/jit-lib-feasibility.2__rqrwc`. Detailed reports link their reproduction instructions and results. These temporary paths may disappear; this archive file summarizes the research but does not bundle those external artifacts or make their local links portable on GitHub.
+Raw experiments were stored outside this repository, principally under `/private/tmp/jit-lib-qualification.UoOrTd` and `/private/tmp/jit-lib-feasibility.2__rqrwc`. Detailed reports link their reproduction instructions and results. These temporary paths may disappear; this learning record summarizes the research but does not bundle those external artifacts or make their local links portable on GitHub.

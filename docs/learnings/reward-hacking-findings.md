@@ -2,6 +2,8 @@
 
 Recorded: 2026-09-21.
 
+**Research status, 2026-09-23:** these findings preserve the earlier Python investigation. Its proposed follow-up work is historical; the current next milestone is a supervised non-Python pilot. Read the [exploration summary](python-exploration.md) for why we changed direction and the [execution plan](../execution-plan.md) for active work. The evidence and limitations below remain part of the project record.
+
 Just-in-Time Library will generate faster versions of libraries and test whether they preserve application behavior. A favorable test report is useful only if the generated code cannot falsify it. **Reward hacking** means satisfying the evaluator's apparent success signal without satisfying the intended task. This document records concrete experiments investigating that problem, including defects in our own checking code.
 
 The central example is simple: a library changed Python's test runner in memory, so a deliberately failing test reported success. The test files stayed unchanged, and ordinary application outputs still matched. We then investigated keeping assertions in a separate process that the library could not modify. That worked for a synthetic application and selected real tests, but preserving all real-library behavior remains unresolved.
@@ -20,7 +22,7 @@ Read [F-01](#f-01-a-library-can-make-repository-tests-report-success-without-run
 
 [F-20](#f-20-valid-messages-do-not-establish-faithful-result-capture) records a source-reviewed trust assumption in result packaging. Its proposed adversarial experiment was blocked before execution; it is not a demonstrated bypass.
 
-The [scope](scope.md) defines requirements. The [feasibility report](execution-feasibility.md) records the environment and overall status. The [defense investigation](reward-hacking-defense.md) connects these local results with published research and proposed safeguards.
+The [scope](../scope.md) defines requirements. The [feasibility report](execution-feasibility.md) records the environment and overall status. The [defense investigation](reward-hacking-defense.md) connects these local results with published research and proposed safeguards.
 
 ## Terms and evidence labels
 

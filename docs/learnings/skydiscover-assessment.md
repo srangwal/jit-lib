@@ -2,11 +2,13 @@
 
 Assessment recorded: 2026-09-20. Reviewed revision: [`0d932b690670a7e544388ad362e9876c8bd256a0`][upstream].
 
+**Research status, 2026-09-23:** this is a record of source review and proposed reuse. The supervised pilot now precedes reusable automation and search-framework comparisons. Accepted work and its current order are maintained in the [execution plan](../execution-plan.md); this assessment does not independently authorize implementation.
+
 Just-in-Time Library will use agents to specialize an existing dependency for a particular application. SkyDiscover provides related tools for generating and improving programs. This assessment asks which ideas or small implementation pieces could help us, and what we must change to meet our own requirements.
 
 **Current status:** these are recommendations based on source inspection and isolated helper tests. We have not selected SkyDiscover as a dependency or chosen one of its search algorithms. We did not run its complete workflows, benchmark suite, or live Codex integration. Later [Phase 2 experiments](execution-feasibility.md) exercised a direct Codex task integration without upstream execution helpers and exposed a repository-test protection gap. They do not establish AdaEvolve integration or adoption.
 
-The [scope](scope.md) defines acceptance. The [execution plan](execution-plan.md) identifies where to evaluate these recommendations. Future tested architecture decisions belong in `docs/design.md`. This document does not select a language, agent count, or final experiment settings.
+The [scope](../scope.md) defines acceptance. The [execution plan](../execution-plan.md) identifies where to evaluate these recommendations. Future tested architecture decisions belong in `docs/design.md`. This document does not select a language, agent count, or final experiment settings.
 
 ## Terms needed for this assessment
 
@@ -83,7 +85,7 @@ There are two audits with different subjects: setup audits the generated experim
 
 **Confirmed policy:** validated findings may add mandatory development checks. The controller records a new check-set version; earlier candidates must pass the additions before they can be selected. Results finishing against an older version cannot restore eligibility. All audits, validation, and rechecks share the original deadline.
 
-Keep final tests, held-out data, measurement rules, thresholds, and ranking unchanged. If a finding needs a change to that fixed contract, end the run and start a newly audited run, preserving findings and exposure history. The [scope](scope.md#evaluation-independence-and-agent-boundaries) defines the policy. It does not weaken repository-assertion protection.
+Keep final tests, held-out data, measurement rules, thresholds, and ranking unchanged. If a finding needs a change to that fixed contract, end the run and start a newly audited run, preserving findings and exposure history. The [scope](../scope.md#evaluation-independence-and-agent-boundaries) defines the policy. It does not weaken repository-assertion protection.
 
 A new isolated check exercised the unmodified [suite runner][suite] and [test validator][validate-test] at the reviewed revision, which still matched remote `main` on 2026-09-21. The suite reported success for both an incorrect library and a deliberately failing assertion when that library replaced `unittest.TestCase.run`. The validator correctly rejected the test because it could not distinguish original from faulty behavior when explicitly given this forgery mutant; it accepted the same test against an ordinary wrong-output mutant. That demonstrates the value and the limit of mutation evidence: detecting one fault does not protect the test from another. The full upstream auditor/workflow was not executed, so this is not a claim that its auditor would miss the example. Reproduction and exact results are in the [Phase 2 experiment README](/private/tmp/jit-lib-feasibility.2__rqrwc/experiment/README.md) and `results/skydiscover-probe/report.json` there.
 
