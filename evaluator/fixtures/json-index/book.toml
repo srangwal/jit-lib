@@ -1,0 +1,14 @@
+[book]
+title = "Evaluator search configuration"
+language = "en"
+
+[output.html.search]
+copy-js = false
+limit-results = 7
+teaser-word-count = 9
+use-boolean-and = true
+boost-title = 5
+boost-hierarchy = 3
+boost-paragraph = 2
+expand = false
+heading-split-level = 1

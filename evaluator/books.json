@@ -1,0 +1,121 @@
+[
+  {
+    "id": "rust-by-example",
+    "name": "Rust By Example",
+    "checkout": "rust-by-example",
+    "book_root": ".",
+    "upstream": "https://github.com/rust-lang/rust-by-example",
+    "revision": "af5ef7024e88587aa3be244422f6365e86c50e85",
+    "prepare": [],
+    "notes": "Default English book. Upstream README permits the missing optional gettext preprocessor; configuration is unchanged."
+  },
+  {
+    "id": "rustonomicon",
+    "name": "Rustonomicon",
+    "checkout": "rustonomicon",
+    "book_root": ".",
+    "upstream": "https://github.com/rust-lang/nomicon",
+    "revision": "5791ca9f5d671328af7a8fe87b42ca90c7211d28",
+    "prepare": []
+  },
+  {
+    "id": "embedded-rust",
+    "name": "Embedded Rust Book",
+    "checkout": "embedded-rust",
+    "book_root": ".",
+    "upstream": "https://github.com/rust-embedded/book",
+    "revision": "0789b0f29e73ecb91213cac10ad0eec1b9333770",
+    "prepare": []
+  },
+  {
+    "id": "rust-book",
+    "name": "The Rust Programming Language",
+    "checkout": "rust-book",
+    "book_root": ".",
+    "upstream": "https://github.com/rust-lang/book",
+    "revision": "1500248d8f230566e4ec9f27fcbb8fe9e2898ab1",
+    "prepare": [
+      [
+        "cargo",
+        "build",
+        "--locked",
+        "--manifest-path",
+        "packages/mdbook-trpl/Cargo.toml",
+        "--bins"
+      ]
+    ]
+  },
+  {
+    "id": "rust-reference",
+    "name": "Rust Reference",
+    "checkout": "rust-reference",
+    "book_root": ".",
+    "upstream": "https://github.com/rust-lang/reference",
+    "revision": "52ffdc09065e0043e877546da923c01bf875d41d",
+    "prepare": [
+      [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "tools/mdbook-spec/Cargo.toml"
+      ]
+    ]
+  },
+  {
+    "id": "rust-cli",
+    "name": "Command Line Applications in Rust",
+    "checkout": "rust-cli",
+    "book_root": ".",
+    "upstream": "https://github.com/rust-cli/book",
+    "revision": "8a865bfe754eef5ff7a39bfc2f57a8e95d591798",
+    "prepare": []
+  },
+  {
+    "id": "rust-wasm",
+    "name": "Rust and WebAssembly",
+    "checkout": "rust-wasm",
+    "book_root": ".",
+    "upstream": "https://github.com/rustwasm/book",
+    "revision": "fd0e80576e334ead48481e855312729430227648",
+    "prepare": [],
+    "compatibility": "legacy-author",
+    "notes": "Prepared copy migrates legacy book.author string to book.authors array for mdBook 0.5.4; source checkout is unchanged. Exact change and hashes are saved in preparation.json."
+  },
+  {
+    "id": "mdbook-guide",
+    "name": "mdBook Guide",
+    "checkout": "mdbook-guide",
+    "book_root": "guide",
+    "upstream": "https://github.com/rust-lang/mdBook",
+    "revision": "ea1b91d0ea1fa2d62e4c1faeeffd910ce19306fd",
+    "prepare": [
+      [
+        "cargo",
+        "build",
+        "--locked",
+        "--manifest-path",
+        "guide-helper/Cargo.toml"
+      ]
+    ]
+  },
+  {
+    "id": "helix",
+    "name": "Helix Documentation",
+    "checkout": "helix",
+    "book_root": "book",
+    "upstream": "https://github.com/helix-editor/helix",
+    "revision": "079a789e8cb08ead67f19e1971a1b7438b37354b",
+    "prepare": []
+  },
+  {
+    "id": "rust-cookbook",
+    "name": "Rust Cookbook",
+    "checkout": "rust-cookbook",
+    "book_root": ".",
+    "upstream": "https://github.com/rust-lang-nursery/rust-cookbook",
+    "revision": "1837612e1b8c78ecc67124cffac76ce5d2f34f97",
+    "prepare": []
+  }
+]

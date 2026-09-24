@@ -1,0 +1,6 @@
+[book]
+title = "Evaluator disabled search"
+language = "en"
+
+[output.html.search]
+enable = false

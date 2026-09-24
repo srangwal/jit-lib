@@ -1,0 +1,15 @@
+{
+  "application": {
+    "url": "https://github.com/rust-lang/mdBook.git",
+    "revision": "2ea30c00f00647d2b3f4c0f79b3e0e1eabc0b66d"
+  },
+  "library": {
+    "url": "https://github.com/mattico/elasticlunr-rs.git",
+    "revision": "057ead48ddcefef0be1d34d19339cdd091053267"
+  },
+  "warmups": 2,
+  "repetitions": 10,
+  "bootstrap_resamples": 10000,
+  "bootstrap_seed": 20260924,
+  "command_timeout_seconds": 1200
+}

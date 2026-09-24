@@ -1,0 +1,12 @@
+[package]
+name = "index-replay"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+elasticlunr-rs = "=3.0.2"
+regex = "=1.12.4"
+serde = { version = "=1.0.228", features = ["derive"] }
+# Match features unified by mdBook's handlebars and axum dependencies.
+serde_json = { version = "=1.0.150", features = ["preserve_order", "raw_value"] }

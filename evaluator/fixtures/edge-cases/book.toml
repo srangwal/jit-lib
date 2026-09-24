@@ -1,0 +1,6 @@
+[book]
+title = "Evaluator edge cases"
+language = "en"
+
+[output.html.search.chapter]
+"excluded.md" = { enable = false }
