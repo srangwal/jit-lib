@@ -60,7 +60,7 @@ class EvidenceTests(unittest.TestCase):
         result = self.prepare()
         self.assertIsNone(result['identity']['source_evaluator_version'])
         self.assertIsNone(result['binaryPaths']['capture'])
-        self.assertTrue(any('predates' in item for item in result['limitations']))
+        self.assertTrue(any('does not record an evaluator version' in item for item in result['limitations']))
         self.assertTrue(any('incomplete' in item for item in result['limitations']))
         source = self.evaluation / 'variants/candidate/library/src/lib.rs'
         source.write_text('changed after freezing')

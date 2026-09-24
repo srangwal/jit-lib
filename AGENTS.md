@@ -7,17 +7,20 @@
 - `evaluator/`: Python evaluator, Rust indexing helper, pinned inputs, and correctness fixtures.
 - `evaluator/tests/`: Python unit tests; `.evaluator/` holds ignored builds and run evidence.
 - `auditor/`: Codex audit controller, evidence packaging, isolated book probes, and tests; `.auditor/` holds ignored audit evidence.
-- `AGENTS.md`: contributor and agent instructions.
+- `scripts/`: cold-setup reproduction and portable report excerpts.
+- `rust-toolchain.toml`: pinned Rust version; `evaluator/environment.json` records tested tools.
 
 Update this guide when source modules, tests, or assets are introduced. Describe only directories and behavior verified in the repository.
 
 ## Build, Test, and Development Commands
 
-Run commands from the repository root.
+Run commands from the repository root. Start with `python3 evaluator/environment.py`, then
+`python3 evaluator/setup_books.py`. See the root README for the complete setup path.
+Use `python3 scripts/reproduce.py` to verify fresh books/caches, tests, evaluation, and auditing.
 
 Run `python3 -m unittest discover -s evaluator/tests -v` for evaluator unit tests.
-Run `python3 -m unittest discover -s auditor/tests -v` for auditor tests. Manually audit a run with `python3 auditor/run.py --evaluation .evaluator/runs/<run-id>`; see `auditor/README.md` for requirements and validated fixture promotion.
-Run `python3 evaluator/run.py self-check --browser /path/to/chrome` to validate original versus original. Evaluate a modified library with `python3 evaluator/run.py run --candidate /path/to/elasticlunr-rs --browser /path/to/chrome`. See `evaluator/README.md` for dependencies, measurement boundaries, and reports.
+Run `python3 -m unittest discover -s auditor/tests -v` for auditor tests. Audit with `python3 auditor/run.py --evaluation .evaluator/runs/<run-id>`; see `auditor/README.md`.
+Run `python3 evaluator/run.py self-check` to validate original versus original. Evaluate a modified library with `python3 evaluator/run.py run --candidate /path/to/elasticlunr-rs`. See `evaluator/README.md` for details.
 
 ## Coding Style & Naming Conventions
 

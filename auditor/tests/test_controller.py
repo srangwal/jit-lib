@@ -2,10 +2,11 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from auditor.agent import validate_response
-from auditor.run import audit, candidate_checkout, promote
+from auditor.run import REPO, audit, auditor_provenance, candidate_checkout, main, promote
 from evaluator.core import inventory, write_json
 
 
@@ -128,6 +129,67 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             promote(proposal(), finding(), result, self.fixtures, {})
         self.assertEqual((target / "src/chapter.md").read_text(), "user edit")
+
+    def test_promotion_uses_portable_identity_and_keeps_existing_metadata(self):
+        result = {"status": "reproduced", "reason": "Mismatch"}
+        identity = {"evaluation": str(REPO / ".evaluator/runs/example"), "evaluation_report_sha256": "report-hash"}
+        target = Path(promote(proposal(), finding(), result, self.fixtures, identity))
+        metadata = json.loads((target / "audit.json").read_text())
+        self.assertEqual(metadata["identity"]["evaluation"], {"kind": "repository-relative", "path": ".evaluator/runs/example"})
+        before = (target / "audit.json").read_bytes()
+        promote(proposal(), finding(), result, self.fixtures, {"evaluation": "/external/new-evaluation"})
+        self.assertEqual((target / "audit.json").read_bytes(), before)
+        other = dict(proposal(), id="external")
+        other["files"] = [dict(item) for item in other["files"]]
+        other["files"][-1]["content"] += "\nExtra words."
+        details = dict(finding(), probe_ids=["external"])
+        target = Path(promote(other, details, result, self.fixtures,
+                              {"evaluation": "/external/machine/results/run-123", "evaluation_report_sha256": "digest"}))
+        reference = json.loads((target / "audit.json").read_text())["identity"]["evaluation"]
+        self.assertEqual(reference, {"kind": "external-artifact", "name": "run-123", "report_sha256": "digest"})
+
+    def test_provenance_records_effective_options_and_frozen_contract(self):
+        options = SimpleNamespace(model="model-override", reasoning_effort="medium", max_rounds=7, agent_timeout=4, probe_timeout=2)
+        record = auditor_provenance(self.root, options)
+        self.assertEqual(record["model"], "model-override")
+        self.assertEqual(record["max_rounds"], 7)
+        self.assertEqual(record["agent_timeout_seconds"], 4)
+        for name in ("prompt.md", "response.schema.json", "config.json", "probes.py", "agent.py", "run.py"):
+            self.assertIn(name, record["source_files_sha256"])
+            self.assertEqual((self.root / "auditor-source" / name).read_bytes(), (REPO / "auditor" / name).read_bytes())
+        self.assertEqual(record["sandbox"]["probe_policy_source_sha256"], record["source_files_sha256"]["probes.py"])
+
+    def test_source_contract_drift_cannot_produce_clean_report(self):
+        options = SimpleNamespace(model="model-override", reasoning_effort="medium", max_rounds=1, agent_timeout=4, probe_timeout=2)
+        record = auditor_provenance(self.root, options)
+        record["source_files_sha256"]["prompt.md"] = "different-recorded-prompt"
+        result, _, _ = self.run_audit([response()], provenance=record)
+        self.assertEqual(result["status"], "incomplete")
+        self.assertIn("source or contract changed", result["error"])
+        self.assertEqual(result["auditor"]["model"], "model-override")
+
+    def test_unsupported_platform_fails_before_auth_and_keeps_provenance(self):
+        output = self.root / "failed-audit"
+        argv = ["auditor/run.py", "--evaluation", "/unused", "--output", str(output), "--model", "test-model", "--max-rounds", "2"]
+        with patch("sys.argv", argv), patch("auditor.run.sys.platform", "linux"), patch("auditor.run.check_login") as login:
+            self.assertEqual(main(), 3)
+        login.assert_not_called()
+        report = json.loads((output / "report.json").read_text())
+        self.assertEqual(report["auditor"]["model"], "test-model")
+        self.assertEqual(report["auditor"]["max_rounds"], 2)
+        self.assertIn("requires macOS", report["error"])
+
+    def test_auth_failure_retains_cli_version_and_provenance(self):
+        output = self.root / "auth-failure"
+        argv = ["auditor/run.py", "--evaluation", "/unused", "--output", str(output)]
+        with patch("sys.argv", argv), patch("auditor.run.check_platform"), \
+                patch("auditor.run.shutil.which", return_value="/test/codex"), \
+                patch("auditor.run.subprocess.run", return_value=SimpleNamespace(stdout="codex test-version\n")), \
+                patch("auditor.run.check_login", side_effect=RuntimeError("authentication required")):
+            self.assertEqual(main(), 3)
+        report = json.loads((output / "report.json").read_text())
+        self.assertEqual(report["auditor"]["codex"], {"executable": "/test/codex", "version": "codex test-version"})
+        self.assertIn("authentication required", report["error"])
 
     def test_response_contract_rejects_missing_fields_or_unknown_status(self):
         for value in ({"action": "finish"}, response(findings=[dict(finding(), status="safe")])):

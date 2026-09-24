@@ -5,7 +5,9 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -14,10 +16,53 @@ import tempfile
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from auditor.agent import check_login, investigate, validate_response
+from auditor.agent import check_login, configuration, investigate, validate_response
 from auditor.evidence import prepare_evidence
 from auditor.probes import run_probe, validate_probe
 from evaluator.core import inventory, sha256, write_json
+
+
+def portable_identity(identity):
+    """Permanent fixtures retain artifact identity, not a contributor's home path."""
+    identity = dict(identity)
+    if isinstance(identity.get("evaluation"), str):
+        path = Path(identity["evaluation"]).resolve()
+        try:
+            identity["evaluation"] = {"kind": "repository-relative", "path": path.relative_to(REPO).as_posix()}
+        except ValueError:
+            identity["evaluation"] = {"kind": "external-artifact", "name": path.name,
+                                      "report_sha256": identity.get("evaluation_report_sha256")}
+    return identity
+
+
+def auditor_provenance(root, args):
+    """Freeze the controller contract before authentication or model invocation."""
+    source = REPO / "auditor"
+    snapshot = root / "auditor-source"
+    snapshot.mkdir()
+    names = sorted({path.name for path in source.glob("*.py")} |
+                   {"prompt.md", "response.schema.json", "config.json"})
+    manifest = {}
+    for name in names:
+        shutil.copy2(source / name, snapshot / name)
+        manifest[name] = sha256(snapshot / name)
+    digest = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+    return {"source_sha256": digest, "source_files_sha256": manifest,
+            "model": args.model, "reasoning_effort": args.reasoning_effort, "max_rounds": args.max_rounds,
+            "agent_timeout_seconds": args.agent_timeout, "probe_timeout_seconds": args.probe_timeout,
+            "platform": {"system": platform.system(), "release": platform.release(),
+                         "machine": platform.machine(), "python": platform.python_version()},
+            "codex": {"executable": None, "version": None},
+            "sandbox": {"agent": "read-only", "approval_policy": "never", "web_search": "disabled",
+                        "ignore_user_config": True, "ignore_rules": True,
+                        "probe": "macOS sandbox-exec", "probe_executable": "/usr/bin/sandbox-exec",
+                        "probe_policy_source_sha256": manifest["probes.py"],
+                        "probe_policy_records": "probes/<id>/<variant>-<repetition>/sandbox.sb"}}
+
+
+def check_platform():
+    if sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").is_file():
+        raise RuntimeError("Auditing requires macOS with /usr/bin/sandbox-exec; no agent was started")
 
 
 def promote(probe, finding, result, fixtures, identity):
@@ -42,22 +87,27 @@ def promote(probe, finding, result, fixtures, identity):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
         write_json(stage / "audit.json", {"finding": finding, "probe": probe["id"],
-                                          "identity": identity, "result": result["reason"]})
+                                          "identity": portable_identity(identity), "result": result["reason"]})
         stage.rename(target)
     return str(target)
 
 
 def audit(package, root, fixtures, *, max_rounds=3, agent=investigate, probe_runner=run_probe,
-          agent_options=None, probe_timeout=30):
+          agent_options=None, probe_timeout=30, provenance=None):
     report = {"status": "incomplete", "identity": package["identity"],
               "limitations": package["limitations"], "rounds": [], "findings": [],
               "probes": [], "promoted_checks": [], "reevaluation": "not-needed"}
+    if provenance is not None:
+        report["auditor"] = provenance
     frozen = inventory(package["root"])
     requests, results, findings = {}, {}, {}
 
     def unchanged():
         if inventory(package["root"]) != frozen:
             raise ValueError("Frozen audit evidence changed during investigation")
+        if provenance is not None and any(sha256(REPO / "auditor" / name) != digest
+                                          for name, digest in provenance["source_files_sha256"].items()):
+            raise ValueError("Auditor source or contract changed during investigation")
 
     try:
         for number in range(1, max_rounds + 1):
@@ -181,27 +231,37 @@ def save_report(root, report):
 
 
 def main():
+    defaults = configuration()
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.set_defaults(reasoning_effort=defaults["reasoning_effort"])
     parser.add_argument("--evaluation", type=Path, required=True)
     parser.add_argument("--output", type=Path, help="new directory; default .auditor/runs/<timestamp>")
-    parser.add_argument("--model", help="Codex model override; otherwise CLI default")
-    parser.add_argument("--max-rounds", type=int, default=3)
-    parser.add_argument("--agent-timeout", type=float, default=600)
-    parser.add_argument("--probe-timeout", type=float, default=30)
+    parser.add_argument("--model", default=defaults["model"], help="Codex model override; default from auditor/config.json")
+    parser.add_argument("--max-rounds", type=int, default=defaults["max_rounds"])
+    parser.add_argument("--agent-timeout", type=float, default=defaults["agent_timeout_seconds"])
+    parser.add_argument("--probe-timeout", type=float, default=defaults["probe_timeout_seconds"])
     parser.add_argument("--reevaluate", action="store_true", help="run full evaluator after adding checks")
     parser.add_argument("--browser", type=Path)
     parser.add_argument("--cargo-home", type=Path)
     args = parser.parse_args()
-    if args.max_rounds < 1 or min(args.agent_timeout, args.probe_timeout) <= 0:
-        parser.error("round and time limits must be positive")
+    if args.max_rounds < 1 or any(not math.isfinite(limit) or limit <= 0
+                                 for limit in (args.agent_timeout, args.probe_timeout)):
+        parser.error("round and time limits must be positive and finite")
+    if not args.model.strip():
+        parser.error("model must not be empty")
     root = (args.output or REPO / ".auditor/runs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")).resolve()
     root.mkdir(parents=True, exist_ok=False)
     print(f"Audit evidence: {root}", flush=True)
     report = {"status": "incomplete"}
     try:
+        report["auditor"] = auditor_provenance(root, args)
+        check_platform()
         executable = shutil.which("codex")
         if not executable:
             raise RuntimeError("Codex CLI is required")
+        report["auditor"]["codex"]["executable"] = executable
+        version = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=30, check=True)
+        report["auditor"]["codex"]["version"] = version.stdout.strip()
         check_login(executable)
         package = prepare_evidence(args.evaluation, root / "input")
         package["limitations"] += [
@@ -209,8 +269,9 @@ def main():
             "Probes use macOS Seatbelt restrictions, not a VM; they have no execution-time disk or memory quota.",
             "Matching local hashes bind these files to the report; they do not authenticate a maliciously rewritten historical run."]
         report = audit(package, root, REPO / "evaluator/fixtures", max_rounds=args.max_rounds,
-                       agent_options={"executable": executable, "model": args.model, "timeout": args.agent_timeout},
-                       probe_timeout=args.probe_timeout)
+                       agent_options={"executable": executable, "model": args.model,
+                                      "reasoning_effort": args.reasoning_effort, "timeout": args.agent_timeout},
+                       probe_timeout=args.probe_timeout, provenance=report["auditor"])
         save_report(root, report)
         if report["promoted_checks"] and args.reevaluate:
             print("Running the strengthened evaluator; see reevaluation.log", flush=True)

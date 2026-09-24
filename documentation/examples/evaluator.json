@@ -1,0 +1,44 @@
+{
+  "aggregate": {
+    "application": {
+      "confidence_interval_95": [
+        0.9915101341300645,
+        1.0018650700897977
+      ],
+      "pairs": 10,
+      "speedup": 0.9968636698440106,
+      "verdict": "inconclusive"
+    },
+    "index": {
+      "confidence_interval_95": [
+        0.9941665762716245,
+        1.0051850689381978
+      ],
+      "pairs": 10,
+      "speedup": 0.999525007078613,
+      "verdict": "inconclusive"
+    }
+  },
+  "artifact_type": "illustrative-summary-excerpt",
+  "calibration": "Original versus original: no real speedup is possible. An interval excluding 1 indicates timing bias or a statistical false positive; investigate before accepting candidates.",
+  "correctness": {
+    "candidate_matching_books": 14,
+    "recorded_books": 14,
+    "recorded_output_files": 1414
+  },
+  "environment": {
+    "browser": "Google Chrome 153.0.8010.53",
+    "node": "v26.9.0",
+    "npm": "11.19.1",
+    "python": "3.14.7",
+    "rust_toolchain": "1.95.0"
+  },
+  "evaluator_sha256": "f5a61e513035d63ab361e6785535803309de53d9bb370380ff845a8a2fc64c76",
+  "mode": "self-check",
+  "notice": "Summary excerpt; not evaluation input or original raw evidence. Text may be shortened and local paths omitted.",
+  "performance_verdict": "inconclusive",
+  "raw_timing_samples": 400,
+  "source_report_sha256": "555958b7eb2efbd50b49153643b9f15949f3891417c49b21f3a52a7266dc54f0",
+  "source_timings_sha256": "8c8fbe223c5ec732102f619874c616f653430115264c9877b115cb8eab7b95e0",
+  "status": "validated"
+}

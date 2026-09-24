@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import platform
 import shutil
-import subprocess
 import sys
 import tomllib
 
@@ -18,6 +17,7 @@ from capture_index import prepare_replay
 from core import (Commands, CorrectnessError, EvaluationError, analyse, compare,
                   evaluator_fingerprint, inventory, markdown_report, sha256, write_json)
 from prepare_books import prepare_book
+from environment import build_environment, runtime_info
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -250,17 +250,6 @@ def main():
     args.cache = args.cache.resolve()
     run = args.cache / "runs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     run.mkdir(parents=True, exist_ok=False)
-    env = dict(os.environ)
-    for key in list(env):
-        if key.startswith("MDBOOK_") or key in ("CARGO_TARGET_DIR", "JIT_LIB_INDEX_TRACE", "CARGO_NET_OFFLINE"):
-            env.pop(key)
-    env.update(TZ="UTC", CARGO_INCREMENTAL="0")
-    env.setdefault("RUSTUP_TOOLCHAIN", subprocess.check_output(
-        ["rustup", "show", "active-toolchain"], text=True).split()[0])
-    if args.cargo_home:
-        env["CARGO_HOME"] = str(args.cargo_home.resolve())
-    if args.browser:
-        env["PUPPETEER_EXECUTABLE_PATH"] = str(args.browser.resolve())
     report = {"run": str(run), "mode": args.mode, "status": "incomplete",
               "configuration": config, "python": sys.version, "platform": platform.platform(),
               "invocation": sys.argv, "selected_books": args.books or "all ten",
@@ -269,6 +258,12 @@ def main():
     commands = Commands(run / "commands", config["command_timeout_seconds"])
     print(f"Evidence and report: {run}", flush=True)
     try:
+        removed = {}
+        env = build_environment(os.environ, args.cargo_home, args.browser,
+                                removed_overrides=removed)
+        report["environment"] = runtime_info(env, cwd=run)
+        report["environment"]["removed_overrides"] = removed
+        write_json(run / "configuration.json", report)
         execute(args, run, report, commands, env)
         if evaluator_fingerprint() != report["evaluator_version"]:
             raise EvaluationError("Evaluator or fixtures changed during the run; rerun with a fixed version")

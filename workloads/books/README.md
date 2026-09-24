@@ -27,7 +27,22 @@ The mdBook Guide and Helix book live inside larger repositories (`guide/` and `b
 
 The Rust and WebAssembly repository is archived. Preserve upstream licenses and book configuration. No development/final-evaluation split is assigned by this inventory.
 
-## Recreate a checkout
+## Set up all books
+
+From the repository root, with Git installed and network access:
+
+```sh
+python3 evaluator/setup_books.py
+```
+
+The command reads the exact revisions in `evaluator/books.json`. It fetches new
+checkouts into temporary directories and installs them only after verification.
+Rerunning verifies existing checkout roots, revisions, origins, and clean status;
+it never updates or overwrites an existing checkout. A mismatch stops setup with
+a clear error. For an isolated destination, pass `--destination /absolute/path/to/books`.
+Symlink destinations are rejected.
+
+## Recreate one checkout manually
 
 From `workloads/books/`, substitute a row’s checkout directory, upstream URL, and exact revision below. Use an absent destination directory.
 

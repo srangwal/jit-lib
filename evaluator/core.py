@@ -13,6 +13,11 @@ import subprocess
 import threading
 import time
 
+if __package__:
+    from .environment import build_overrides, cargo_configs, validate_cargo_settings
+else:
+    from environment import build_overrides, cargo_configs, validate_cargo_settings
+
 
 class EvaluationError(RuntimeError):
     pass
@@ -96,14 +101,20 @@ class Commands:
         self.sequence += 1
         stem = self.directory / f"{self.sequence:04d}"
         argv = list(map(str, argv))
+        if Path(argv[0]).name == "cargo":
+            validate_cargo_settings(env, Path(cwd).resolve())
         record = {
             "argv": argv, "cwd": str(cwd),
             "started_utc": datetime.now(timezone.utc).isoformat(),
-            "environment": {key: env[key] for key in (
+            "environment": {**build_overrides(env), **{key: env[key] for key in (
                 "CARGO_HOME", "CARGO_TARGET_DIR", "CARGO_NET_OFFLINE", "RUSTUP_TOOLCHAIN",
                 "RUSTFLAGS", "TZ", "SOURCE_DATE_EPOCH", "CARGO_INCREMENTAL",
+                "CARGO_ENCODED_RUSTFLAGS", "RUSTDOCFLAGS", "RUSTC", "RUSTDOC",
+                "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CC", "CFLAGS",
+                "CXX", "CXXFLAGS", "LDFLAGS", "npm_config_cache",
                 "PUPPETEER_EXECUTABLE_PATH", "JIT_LIB_INDEX_TRACE",
-            ) if key in env},
+            ) if key in env}},
+            "cargo_config_sha256": cargo_configs(env, Path(cwd).resolve()),
             "stdout": str(stem.with_suffix(".stdout.log")),
             "stderr": str(stem.with_suffix(".stderr.log")),
         }

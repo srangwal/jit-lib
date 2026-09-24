@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 
-from auditor.agent import check_login, investigate
+from auditor.agent import check_login, configuration, investigate
 
 
 class AgentAdapterTests(unittest.TestCase):
@@ -36,6 +36,18 @@ print('{"type":"turn.completed"}')
         result = investigate(self.root, [], self.root / "round", executable=executable)
         self.assertEqual(result["action"], "finish")
         self.assertIn("turn.completed", (self.root / "round/events.jsonl").read_text())
+        argv = json.loads((self.root / "round/command.json").read_text())
+        self.assertEqual(argv[argv.index("--model") + 1], configuration()["model"])
+        self.assertIn('model_reasoning_effort="medium"', argv)
+
+    def test_model_override_is_explicit(self):
+        executable = self.executable('''import json,sys
+from pathlib import Path
+assert sys.argv[sys.argv.index("--model")+1] == "test-model"
+Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps({
+ "action":"finish","summary":"Inspected","findings":[],"probes":[]}))
+''')
+        investigate(self.root, [], self.root / "round", executable=executable, model="test-model")
 
     def test_login_failure_is_explicit(self):
         executable = self.executable("import sys\nsys.exit(1)\n")

@@ -6,7 +6,8 @@ improvement is credible. See [the design](../documentation/AUDITOR.md).
 
 ## Run an audit
 
-From the repository root, with Codex CLI installed and logged in:
+From the repository root on macOS, with `sandbox-exec` available and Codex CLI
+installed and logged in:
 
 ```sh
 python3 auditor/run.py --evaluation .evaluator/runs/<run-id>
@@ -52,6 +53,18 @@ for no issue found within scope, `1` for a confirmed violation, `2` for unresolv
 concerns, and `3` for an incomplete audit. These are audit outcomes, not an
 automatic acceptance policy.
 
+Each report records the effective model, round/time limits, Codex CLI version,
+platform and Python version, and sandbox policies under `auditor`. The
+`auditor-source/` snapshot contains the controller modules, prompt, response
+schema, and default configuration, with file hashes and a combined fingerprint.
+Platform, authentication, and other early failures retain this provenance where
+available. Missing CLI version or binary information remains null rather than
+being inferred.
+
+New permanent fixture metadata references evaluations inside this checkout by
+repository-relative path. External evaluations use a basename and report hash,
+not the originating machine's absolute path. Existing fixture metadata is kept.
+
 ## Boundaries
 
 Automated experiments currently support self-contained mdBook correctness cases.
@@ -65,7 +78,8 @@ writes, and blocked network/fork access. This is not a VM or a disk/memory quota
 The optional full rerun uses the evaluator's existing build/test execution model,
 which does not sandbox candidate build scripts or upstream test suites.
 
-Codex uses its installed default model unless `--model` is supplied. User config
+`config.json` sets `gpt-6-sol` with medium reasoning, both explicitly passed to Codex;
+`--model` overrides it and the report records the effective value. User config
 and execution rules are ignored for the audit process; existing Codex login is
 used. The default budget is three rounds with a ten-minute timeout per round;
 `--max-rounds`, `--agent-timeout`, and `--probe-timeout` adjust those limits.
@@ -97,3 +111,9 @@ Local reports are `.auditor/validation-{baseline,planted,benign}/report.md`.
 The two changed-library inputs were explicitly labeled synthetic qualification
 inputs. These checks validate the auditor workflow; they establish no speedup or
 general detection guarantee. The faulty candidate failed before timing started.
+
+To recreate these controls from a new self-check, follow the
+[validation recipe](validation/README.md). The root command
+`python3 scripts/reproduce.py` runs the complete cold-setup demonstration in an
+isolated source copy. [Portable examples](../documentation/examples/README.md)
+are small report excerpts; the original run artifacts are not checkout dependencies.

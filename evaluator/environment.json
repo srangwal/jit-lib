@@ -1,0 +1,14 @@
+{
+  "minimum_python": "3.11.0",
+  "minimum_node": "24.0.0",
+  "rust_toolchain": "1.95.0",
+  "tested": {
+    "python": "3.14.7",
+    "rustc": "1.95.0",
+    "cargo": "1.95.0",
+    "node": "26.9.0",
+    "npm": "11.19.1",
+    "chrome": "153.0.8010.53",
+    "codex": "0.156.1"
+  }
+}

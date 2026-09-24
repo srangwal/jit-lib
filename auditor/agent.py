@@ -9,6 +9,10 @@ import subprocess
 HERE = Path(__file__).resolve().parent
 
 
+def configuration():
+    return json.loads((HERE / "config.json").read_text())
+
+
 def validate_response(value, schema=None):
     """Validate the small JSON-schema subset used by our response contract."""
     schema = schema or json.loads((HERE / "response.schema.json").read_text())
@@ -37,7 +41,8 @@ def check_login(executable):
                            + result.stderr.strip())
 
 
-def investigate(package, history, destination, *, executable="codex", model=None, timeout=600):
+def investigate(package, history, destination, *, executable="codex", model=None,
+                reasoning_effort=None, timeout=600):
     destination.mkdir(parents=True, exist_ok=False)
     prompt = (HERE / "prompt.md").read_text() + "\n\nController history:\n" + json.dumps(history)
     (destination / "prompt.md").write_text(prompt)
@@ -47,8 +52,8 @@ def investigate(package, history, destination, *, executable="codex", model=None
             "-c", 'approval_policy="never"', "-c", 'web_search="disabled"',
             "--json", "--output-schema", str(HERE / "response.schema.json"),
             "--output-last-message", str(response), "-C", str(package), "-"]
-    if model:
-        argv[2:2] = ["--model", model]
+    argv[2:2] = ["--model", model or configuration()["model"]]
+    argv[2:2] = ["-c", "model_reasoning_effort=" + json.dumps(reasoning_effort or configuration()["reasoning_effort"])]
     (destination / "command.json").write_text(json.dumps(argv, indent=2) + "\n")
     with (destination / "events.jsonl").open("wb") as stdout, (destination / "stderr.log").open("wb") as stderr:
         process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,

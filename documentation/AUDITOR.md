@@ -64,3 +64,10 @@ Run `python3 auditor/run.py --evaluation .evaluator/runs/<run-id>`. Add
 `--reevaluate --browser /path/to/chrome` to run the strengthened evaluator after
 adding checks. Otherwise the report records that a full rerun is still required.
 See [auditor/README.md](../auditor/README.md) for commands, outcomes, and limits.
+
+For reproduction, the default model and investigation limits live in
+`auditor/config.json`. Each report records the effective settings, CLI version,
+and audit-code fingerprint. The executable probes require macOS `sandbox-exec`.
+See [the validation recipes](../auditor/validation/README.md) for the deliberately
+faulty and harmless candidates, and [example reports](examples/README.md) for
+small portable excerpts. These examples demonstrate the workflow, not a speedup.

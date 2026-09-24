@@ -6,8 +6,9 @@ compiled binaries, and results live in the ignored `.evaluator/` directory.
 
 ## Run it
 
-Requires Python 3.11+, Git, Rust/Cargo, Node/npm, and installed Chrome or
-Chromium. Keep the ten pinned checkouts in `workloads/books/` (see its README).
+Follow the [root setup guide](../README.md). Requires Python 3.11+, Git,
+Rust 1.95.0 through rustup, Node 24+, npm, and installed Chrome/Chromium.
+Run `python3 evaluator/setup_books.py` to acquire the ten pinned books.
 Initial preparation downloads pinned application/library sources and dependencies.
 
 ```sh
@@ -23,7 +24,8 @@ python3 -m unittest discover -s evaluator/tests -v
 
 On macOS, a typical browser path is
 `'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'`.
-Alternatively, set `PUPPETEER_EXECUTABLE_PATH`. `--cargo-home PATH` reuses a
+This standard location is detected automatically. Alternatively, set
+`PUPPETEER_EXECUTABLE_PATH`. `--cargo-home PATH` reuses a
 dependency cache. Candidate snapshots include tracked edits and nonignored
 untracked files; the checkout is not changed. Keep dependencies compatible with
 the pinned application lockfile: changing unrelated dependency versions is rejected.
@@ -92,13 +94,13 @@ candidates, and avoid repeatedly rerunning until a favorable interval appears.
 
 Pinned checkouts must be clean. Copies are prepared inside the run directory.
 Three books compile their own preprocessors; timed builds run those preprocessors
-normally with Cargo offline. The chosen installed Rust toolchain overrides moving
+normally with Cargo offline. The pinned Rust 1.95.0 toolchain overrides moving
 book toolchain files and is recorded. Rust and WebAssembly's obsolete `author`
 field is migrated to `authors` in the copy, identically for both variants.
 The original checkout remains unchanged. Rust By Example permits its optional
 gettext preprocessor to be absent for the default English build.
 
-## Validation performed
+## Historical validation example
 
 The full original-versus-original run on 2026-09-24 passed exact output checks
 for all ten real books and three fixtures (1,376 generated files). Both overall
@@ -112,3 +114,6 @@ and calibration checks. No optimized library has been evaluated.
 
 Local evidence: `.evaluator/runs/20260924T055553.065243Z/report.md` and adjacent
 logs and raw timings. These generated artifacts are ignored by Git.
+
+For portable excerpts and regeneration commands, see [example reports](../documentation/examples/README.md).
+The complete cold-setup check is `python3 scripts/reproduce.py`.

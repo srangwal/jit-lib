@@ -175,7 +175,7 @@ def prepare_evidence(evaluation, destination):
         copy(REPO / 'documentation', name, destination / 'documentation' / name)
     historical = report.get('evaluator_version')
     if historical is None:
-        limitations.append('Run predates evaluator version recording; current evaluator code is review context, not an authenticated historical version.')
+        limitations.append('Run does not record an evaluator version; current evaluator code is review context, not an authenticated historical version.')
     elif historical != current:
         limitations.append('Current evaluator fingerprint differs from the recorded evaluator version; current code is review context only.')
     identity = {'evaluation': str(evaluation), 'evaluation_report_sha256': sha256(report_path),
