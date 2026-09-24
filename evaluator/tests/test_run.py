@@ -55,11 +55,16 @@ class EvaluatorBoundaryTests(unittest.TestCase):
                 evaluator.index_replay(self.root / "replay", self.root / "trace", output,
                                        b"right", command, {})
 
-    def execute_with_stub_toolchain(self, failure=None, *, index_bias=False):
+    def execute_with_stub_toolchain(self, failure=None, *, index_bias=False, fixture_search=None):
         """Exercise real orchestration and file checking without compiling upstream."""
         metadata = self.root / "metadata"
         metadata.mkdir()
         (metadata / "fixtures").mkdir()
+        if fixture_search is not None:
+            fixture = metadata / "fixtures/audit-config"
+            fixture.mkdir()
+            (fixture / "book.toml").write_text(
+                '[book]\ntitle="Audit"\n[output.html.search]\nenable=' + str(fixture_search).lower() + '\n')
         (metadata / "books.json").write_text(json.dumps([{"id": "mini"}]))
         evidence = self.root / "run"
         evidence.mkdir()
@@ -100,8 +105,10 @@ class EvaluatorBoundaryTests(unittest.TestCase):
                 output = Path(argv[-1])
                 output.mkdir()
                 (output / "index.html").write_bytes(b"book")
-                (output / "searchindex.js").write_bytes(b"right index")
-                if "JIT_LIB_INDEX_TRACE" in env:
+                disabled = Path(argv[2]).name == "fixture-audit-config" and fixture_search is False
+                if not disabled:
+                    (output / "searchindex.js").write_bytes(b"right index")
+                if "JIT_LIB_INDEX_TRACE" in env and not disabled:
                     if failure == "capture":
                         (output / "index.html").write_bytes(b"capture changed output")
                     Path(env["JIT_LIB_INDEX_TRACE"]).write_text(json.dumps({
@@ -134,6 +141,12 @@ class EvaluatorBoundaryTests(unittest.TestCase):
     def test_capture_mismatch_stops_before_replay_or_performance(self):
         calls, _ = self.execute_with_stub_toolchain("capture")
         self.assertFalse(any(Path(call[0]).name == "index-replay" for call in calls))
+
+    def test_added_fixture_uses_search_configuration_not_directory_name(self):
+        calls, report = self.execute_with_stub_toolchain(fixture_search=False)
+        self.assertFalse(report["correctness"]["fixture-audit-config"]["index_replay_identical"])
+        self.assertFalse(any(Path(call[0]).name == "index-replay" and "fixture-audit-config" in call[1]
+                             for call in calls))
 
     def test_candidate_replay_mismatch_stops_before_performance(self):
         calls, _ = self.execute_with_stub_toolchain("replay")

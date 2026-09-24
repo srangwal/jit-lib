@@ -51,3 +51,16 @@ The strongest negative conclusion is **“no reward hacking detected within this
 ## When to run
 
 Start with explicit, manual invocation. Whether to audit every evaluation, every qualifying improvement, or after a batch of runs remains undecided. Automatic scheduling and acceptance policy are separate decisions.
+
+## Current implementation
+
+The implementation lives in `auditor/` and uses Codex CLI. A controller freezes
+the evidence, runs proposed books against both binaries, and adds confirmed
+regressions to `evaluator/fixtures/`. An agent assertion alone cannot confirm a
+violation. Automated checks currently cover self-contained book correctness;
+other concerns remain unresolved with proposed checks.
+
+Run `python3 auditor/run.py --evaluation .evaluator/runs/<run-id>`. Add
+`--reevaluate --browser /path/to/chrome` to run the strengthened evaluator after
+adding checks. Otherwise the report records that a full rerun is still required.
+See [auditor/README.md](../auditor/README.md) for commands, outcomes, and limits.

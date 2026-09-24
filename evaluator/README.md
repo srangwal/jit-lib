@@ -37,7 +37,7 @@ output hashes, correctness outputs, captured indexing inputs, and raw
 
 1. Run existing application, no-default-feature, browser, and library tests for
    both variants. Build release binaries and book preprocessors before timing.
-2. Build ten real books and three small correctness fixtures. Require identical
+2. Build ten real books and every book under `fixtures/`. Require identical
    filenames and bytes between original, repeated original, and candidate.
 3. Capture indexing inputs with a separate original mdBook build. Require that
    capture leaves complete book output unchanged. Replay those inputs against
@@ -48,6 +48,10 @@ output hashes, correctness outputs, captured indexing inputs, and raw
 The checker also deliberately changes, removes, and adds files and must reject
 each alteration. Fixture details are in `fixtures/README.md`; pinned real books
 and preparation commands are in `books.json`.
+
+The [auditor](../auditor/README.md) can add reproduced failures as permanent
+fixtures. Reports record an `evaluator_version` fingerprint of the harness and
+fixtures. A run cannot finish successfully if these files change while it runs.
 
 ## Measurements and verdict
 

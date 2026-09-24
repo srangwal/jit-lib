@@ -11,11 +11,12 @@ import platform
 import shutil
 import subprocess
 import sys
+import tomllib
 
 from builds import prepare_variants, registry_packages, run_suites, setup_gui
 from capture_index import prepare_replay
 from core import (Commands, CorrectnessError, EvaluationError, analyse, compare,
-                  inventory, markdown_report, sha256, write_json)
+                  evaluator_fingerprint, inventory, markdown_report, sha256, write_json)
 from prepare_books import prepare_book
 
 HERE = Path(__file__).resolve().parent
@@ -127,9 +128,11 @@ def execute(args, run, report, commands, env):
             continue
         destination = run / "books" / f"fixture-{source.name}"
         shutil.copytree(source, destination)
+        fixture_config = tomllib.loads((destination / "book.toml").read_text())
         books[f"fixture-{source.name}"] = {
             "root": destination, "inputs": destination, "env": env,
-            "performance": False, "search": source.name != "search-disabled",
+            "performance": False,
+            "search": fixture_config.get("output", {}).get("html", {}).get("search", {}).get("enable", True),
         }
     input_hashes = {name: input_manifest(book["inputs"]) for name, book in books.items()}
     write_json(run / "book-inputs.json", input_hashes)
@@ -260,12 +263,15 @@ def main():
         env["PUPPETEER_EXECUTABLE_PATH"] = str(args.browser.resolve())
     report = {"run": str(run), "mode": args.mode, "status": "incomplete",
               "configuration": config, "python": sys.version, "platform": platform.platform(),
-              "invocation": sys.argv, "selected_books": args.books or "all ten"}
+              "invocation": sys.argv, "selected_books": args.books or "all ten",
+              "evaluator_version": evaluator_fingerprint()}
     write_json(run / "configuration.json", report)
     commands = Commands(run / "commands", config["command_timeout_seconds"])
     print(f"Evidence and report: {run}", flush=True)
     try:
         execute(args, run, report, commands, env)
+        if evaluator_fingerprint() != report["evaluator_version"]:
+            raise EvaluationError("Evaluator or fixtures changed during the run; rerun with a fixed version")
     except (Exception, KeyboardInterrupt) as error:
         report["status"] = "correctness-failed" if isinstance(error, CorrectnessError) else "incomplete"
         report["error"] = f"{type(error).__name__}: {error}"

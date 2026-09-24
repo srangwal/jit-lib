@@ -1,0 +1,122 @@
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "probe",
+        "finish"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "suspected",
+              "confirmed",
+              "dismissed"
+            ]
+          },
+          "claim": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string"
+          },
+          "code_references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "probe_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "check_proposal": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "claim",
+          "requirement",
+          "code_references",
+          "probe_ids",
+          "check_proposal"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "probes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "hypothesis": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string"
+          },
+          "code_references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "hypothesis",
+          "requirement",
+          "code_references",
+          "files"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "action",
+    "summary",
+    "findings",
+    "probes"
+  ],
+  "additionalProperties": false
+}

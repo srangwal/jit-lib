@@ -33,6 +33,23 @@ def sha256(path):
         return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
+def evaluator_fingerprint(root=None):
+    """Identify the harness and permanent fixtures used for a run."""
+    root = Path(root) if root is not None else Path(__file__).resolve().parent
+    files = {}
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if set(relative.parts) & {"__pycache__", "target", "node_modules", ".git"}:
+            continue
+        if path.is_symlink():
+            raise EvaluationError(f"Symlink evaluator source: {path}")
+        if path.is_file() and (path.suffix in {".py", ".json", ".toml", ".rs", ".md", ".lock"}
+                               or "fixtures" in relative.parts or "locks" in relative.parts):
+            files[relative.as_posix()] = sha256(path)
+    digest = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {"sha256": digest, "files": files}
+
+
 def inventory(root):
     """Compare relative names and bytes, not timestamps or filesystem ordering."""
     root = Path(root)
