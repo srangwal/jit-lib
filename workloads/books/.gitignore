@@ -1,0 +1,11 @@
+# Local upstream checkouts; exact revisions are recorded in README.md.
+/rust-by-example/
+/rustonomicon/
+/embedded-rust/
+/rust-book/
+/rust-reference/
+/rust-cli/
+/rust-wasm/
+/mdbook-guide/
+/helix/
+/rust-cookbook/

@@ -1,0 +1,8 @@
+[book]
+title = "Search preservation"
+language = "en"
+
+[output.html]
+
+[output.html.search]
+enable = true
