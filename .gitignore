@@ -1,4 +1,5 @@
 /.evaluator/
 /.auditor/
+/.optimizer/
 /old-docs/
 __pycache__/

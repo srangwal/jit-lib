@@ -1,0 +1,5 @@
+{
+  "model": "gpt-6-sol",
+  "reasoning_effort": "medium",
+  "agent_timeout_seconds": 600
+}

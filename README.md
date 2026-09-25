@@ -71,6 +71,7 @@ and leaves it untouched.
 ```sh
 python3 -m unittest discover -s evaluator/tests -v
 python3 -m unittest discover -s auditor/tests -v
+python3 -m unittest discover -s optimizer/tests -v
 ```
 
 ### 4. Check the evaluator
@@ -117,6 +118,21 @@ Open the printed `.auditor/.../report.md`. It explains findings, reproduced
 failures, and any checks added. `no-issue-found` means no violation was found
 within that investigation, not a guarantee. Audit scheduling is still manual.
 See [auditor details](auditor/README.md).
+
+## Let the optimizer propose a candidate
+
+After a self-check reports `validated`, run one AI optimization attempt:
+
+```sh
+python3 optimizer/run.py --baseline .evaluator/runs/<self-check-run-id>
+```
+
+It uses Codex CLI with `gpt-6-sol` and a 10-minute agent limit. Open the printed
+report to see its explanation and any candidate. Local builds and correctness
+tests are allowed; official evaluation remains a separate command.
+See [optimizer instructions](optimizer/README.md) for outputs and options.
+The [overall workflow](docs/WORKFLOW.md) also describes the future controller,
+which has not been implemented.
 
 ## Reproduce the complete demonstration
 

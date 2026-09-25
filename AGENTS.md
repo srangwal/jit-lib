@@ -3,10 +3,12 @@
 ## Project Structure & Module Organization
 
 - `documentation/`: project goal, evaluator design, and experiment notes.
+- `docs/`: optimizer responsibilities, proposed controller, and overall workflow.
 - `workloads/books/`: upstream book checkouts; `README.md` records their sources and exact revisions.
 - `evaluator/`: Python evaluator, Rust indexing helper, pinned inputs, and correctness fixtures.
 - `evaluator/tests/`: Python unit tests; `.evaluator/` holds ignored builds and run evidence.
 - `auditor/`: Codex audit controller, evidence packaging, isolated book probes, and tests; `.auditor/` holds ignored audit evidence.
+- `optimizer/`: one Codex specialization attempt, protected baseline context, candidate export, and tests; `.optimizer/` holds ignored attempts.
 - `scripts/`: cold-setup reproduction and portable report excerpts.
 - `rust-toolchain.toml`: pinned Rust version; `evaluator/environment.json` records tested tools.
 
@@ -21,6 +23,8 @@ Use `python3 scripts/reproduce.py` to verify fresh books/caches, tests, evaluati
 Run `python3 -m unittest discover -s evaluator/tests -v` for evaluator unit tests.
 Run `python3 -m unittest discover -s auditor/tests -v` for auditor tests. Audit with `python3 auditor/run.py --evaluation .evaluator/runs/<run-id>`; see `auditor/README.md`.
 Run `python3 evaluator/run.py self-check` to validate original versus original. Evaluate a modified library with `python3 evaluator/run.py run --candidate /path/to/elasticlunr-rs`. See `evaluator/README.md` for details.
+Run `python3 -m unittest discover -s optimizer/tests -v` for optimizer tests.
+Run `python3 optimizer/run.py --baseline .evaluator/runs/<validated-self-check>` for one optimizer attempt; see `optimizer/README.md`. The full experiment controller remains unimplemented.
 
 ## Coding Style & Naming Conventions
 

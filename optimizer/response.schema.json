@@ -1,0 +1,102 @@
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "candidate",
+        "no-change"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "guarantees": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "application_references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "claim",
+          "application_references"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "removed_work": {
+      "type": "string"
+    },
+    "library_references": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "why_behavior_is_preserved": {
+      "type": "string"
+    },
+    "expected_benefit": {
+      "type": "string"
+    },
+    "profile_assessment": {
+      "type": "string"
+    },
+    "local_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "not-run"
+            ]
+          },
+          "details": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "outcome",
+          "details"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "status",
+    "summary",
+    "guarantees",
+    "removed_work",
+    "library_references",
+    "why_behavior_is_preserved",
+    "expected_benefit",
+    "profile_assessment",
+    "local_checks",
+    "risks"
+  ],
+  "additionalProperties": false
+}
