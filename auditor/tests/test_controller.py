@@ -188,8 +188,17 @@ class ControllerTests(unittest.TestCase):
                 patch("auditor.run.check_login", side_effect=RuntimeError("authentication required")):
             self.assertEqual(main(), 3)
         report = json.loads((output / "report.json").read_text())
-        self.assertEqual(report["auditor"]["codex"], {"executable": "/test/codex", "version": "codex test-version"})
+        self.assertEqual(report["auditor"]["coding_agent"], {"name": "codex", "executable": "/test/codex", "version": "codex test-version"})
         self.assertIn("authentication required", report["error"])
+
+    def test_sample_report_retains_new_and_historical_agent_versions(self):
+        from scripts.sample_reports import audit_excerpt
+        path = self.root / "report.json"
+        write_json(path, {"status": "incomplete", "auditor": {"coding_agent": {
+            "name": "claude", "version": "test-version", "executable": "/local/machine/claude"}}})
+        self.assertEqual(audit_excerpt(path)["auditor"]["coding_agent"], {"name": "claude", "version": "test-version"})
+        write_json(path, {"status": "incomplete", "auditor": {"codex": {"version": "historical"}}})
+        self.assertEqual(audit_excerpt(path)["auditor"]["codex_version"], "historical")
 
     def test_response_contract_rejects_missing_fields_or_unknown_status(self):
         for value in ({"action": "finish"}, response(findings=[dict(finding(), status="safe")])):

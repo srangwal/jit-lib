@@ -80,6 +80,10 @@ def audit_excerpt(location):
             "probe_timeout_seconds", "source_sha256") if key in config}
         if config.get("codex", {}).get("version"):
             excerpt["auditor"]["codex_version"] = short_text(config["codex"]["version"])
+        if "coding_agent" in config:
+            excerpt["auditor"]["coding_agent"] = {
+                key: short_text(config["coding_agent"][key]) for key in ("name", "version")
+                if config["coding_agent"].get(key)}
     return excerpt
 
 

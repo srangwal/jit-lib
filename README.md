@@ -54,7 +54,9 @@ export PUPPETEER_EXECUTABLE_PATH="/path/to/chrome-or-chromium"
 
 Tested versions and environment recording are described in
 [the environment guide](documentation/ENVIRONMENT.md). Codex access to
-`gpt-6-sol` is required for the default audit; model calls use your account.
+`gpt-6-sol` is required for the default audit; model calls use your account. For Claude Code or a local OpenCode model, see
+[coding-agent setup](coding_agents/README.md). The environment checker and cold-setup
+reproduction command below currently check and use the default Codex setup.
 
 ### 2. Download the ten books
 
@@ -72,6 +74,8 @@ and leaves it untouched.
 python3 -m unittest discover -s evaluator/tests -v
 python3 -m unittest discover -s auditor/tests -v
 python3 -m unittest discover -s optimizer/tests -v
+python3 -m unittest discover -s controller/tests -v
+python3 -m unittest discover -s coding_agents/tests -v
 ```
 
 ### 4. Check the evaluator
@@ -116,7 +120,7 @@ python3 auditor/run.py --evaluation .evaluator/runs/<run-id>
 
 Open the printed `.auditor/.../report.md`. It explains findings, reproduced
 failures, and any checks added. `no-issue-found` means no violation was found
-within that investigation, not a guarantee. Audit scheduling is still manual.
+within that investigation, not a guarantee. This command runs one standalone audit.
 See [auditor details](auditor/README.md).
 
 ## Let the optimizer propose a candidate
@@ -127,12 +131,33 @@ After a self-check reports `validated`, run one AI optimization attempt:
 python3 optimizer/run.py --baseline .evaluator/runs/<self-check-run-id>
 ```
 
-It uses Codex CLI with `gpt-6-sol` and a 10-minute agent limit. Open the printed
+It defaults to Codex CLI with `gpt-6-sol` and a 10-minute agent limit.
+Both optimizer and auditor also accept `--agent claude` or `--agent opencode`;
+OpenCode requires a locally hosted model. Open the printed
 report to see its explanation and any candidate. Local builds and correctness
 tests are allowed; official evaluation remains a separate command.
 See [optimizer instructions](optimizer/README.md) for outputs and options.
-The [overall workflow](docs/WORKFLOW.md) also describes the future controller,
-which has not been implemented.
+
+## Run the complete optimization loop
+
+After the full ten-book self-check reports `validated`:
+
+```sh
+python3 controller/run.py --baseline .evaluator/runs/<self-check-run-id>
+```
+
+The controller allows five optimizer attempts, each with up to ten minutes of
+agent time. It evaluates and audits every submitted candidate, sends the results
+back as feedback, and stops at the first qualifying candidate. Evaluation and
+auditing take additional time. Later attempts explicitly choose to revise the
+previous candidate or restart from the original.
+
+Open the printed `.controller/.../report.md` to follow requests, measured
+improvements and uncertainty, audit findings, and decisions. The output includes
+raw logs and linked JSON records. A stale baseline triggers a fresh self-check.
+Use `--optimizer-agent` and `--auditor-agent` to choose their runtimes independently.
+See [controller instructions](controller/README.md) for examples, limits, failure handling,
+and the [overall workflow](docs/WORKFLOW.md).
 
 ## Reproduce the complete demonstration
 

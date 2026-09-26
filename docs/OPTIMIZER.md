@@ -6,14 +6,18 @@ The optimizer is an AI agent that proposes and implements a library change to
 make an application faster without changing its supported behavior. The project
 goal is described in [GOAL.md](../documentation/GOAL.md).
 
-This document describes the intended role. The first optimizer uses Codex CLI
-with `gpt-6-sol` and supports only mdBook with elasticlunr-rs.
+The optimizer supports mdBook with elasticlunr-rs. Its coding agent is configurable:
+Codex CLI (default, `gpt-6-sol`), Claude Code, or OpenCode with a locally hosted
+model. Changing the agent does not change its responsibilities or acceptance
+checks. See [runtime setup](../coding_agents/README.md).
 
 ## Inputs
 
 The first implementation requires a completed evaluator self-check with status
-`validated`. Each command starts from that run's original library and makes one
-attempt, with a default agent limit of 10 minutes. See the
+`validated`. Each command makes one attempt, with a default agent limit of ten
+minutes. It starts from the original library unless a previous candidate is
+supplied; then a separate selection step chooses revise or restart before edits.
+Selection and editing share the agent budget. See the
 [optimizer command guide](../optimizer/README.md).
 
 Provide the application and original library sources, representative workloads,
@@ -53,4 +57,4 @@ failures, or treat its own explanation as a performance verdict.
 The [evaluator](../documentation/EVALUATOR.md) decides whether correctness and
 measured performance pass. The [auditor](../documentation/AUDITOR.md) investigates
 whether the candidate exploits gaps in those checks. Coordination belongs to
-the proposed [controller](CONTROLLER.md).
+the [controller](CONTROLLER.md).

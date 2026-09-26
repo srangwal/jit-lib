@@ -88,6 +88,33 @@ Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps(
         self.assertEqual((settings["model"], settings["reasoning_effort"], settings["timeout_seconds"]),
                          ("test-model", "high", 5))
 
+    def test_external_agent_receives_private_workspace_and_offline_build_environment(self):
+        with patch("optimizer.agent.run_external", return_value={"status": "candidate", "summary": "Changed"}) as run:
+            result = agent.optimize(self.workspace, self.context, self.destination,
+                                    agent="claude", executable="claude", model="sonnet")
+        self.assertEqual(result["status"], "candidate")
+        self.assertEqual(run.call_args.args[:3], ("claude", "claude", "sonnet"))
+        self.assertEqual(run.call_args.kwargs["workspace"], self.workspace)
+        self.assertEqual(run.call_args.kwargs["environment"]["CARGO_NET_OFFLINE"], "true")
+        self.assertIn(str(self.context), run.call_args.args[4])
+
+    def test_selection_uses_its_own_prompt_and_schema_before_editing(self):
+        (self.contract / "selection.md").write_text("Choose revise or restart without edits.")
+        (self.contract / "selection.schema.json").write_text(json.dumps({
+            "type": "object", "properties": {
+                "choice": {"type": "string", "enum": ["revise", "restart"]},
+                "reason": {"type": "string"}},
+            "required": ["choice", "reason"], "additionalProperties": False,
+        }))
+        result = self.optimize('''import json,sys
+from pathlib import Path
+assert "Choose revise or restart" in sys.stdin.read()
+assert not Path("library").exists()
+Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps({"choice":"restart","reason":"Prior candidate failed correctness."}))
+''', selection=True)
+        self.assertEqual(result["choice"], "restart")
+        self.assertIn("Choose revise", (self.destination / "prompt.md").read_text())
+
     def test_overlapping_context_or_logs_and_escape_scratch_are_rejected(self):
         for context, destination in ((self.workspace, self.destination),
                                      (self.context, self.workspace / "logs"),

@@ -1,4 +1,4 @@
-"""Run a candidate-editing Codex session; official evaluation stays in the controller."""
+"""Run a candidate-editing coding-agent session; official evaluation stays in the controller."""
 
 import json
 import math
@@ -12,6 +12,8 @@ import tomllib
 import uuid
 
 from auditor.agent import validate_response
+from coding_agents.runtime import run as run_external
+from coding_agents.tools import probe as probe_external
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -67,8 +69,11 @@ def config_arguments(configuration):
     return [argument for key, value in configuration.items() for argument in ("-c", key + "=" + value_toml(value))]
 
 
-def probe_workspace(workspace, context, destination, *, executable="codex", timeout=30):
+def probe_workspace(workspace, context, destination, *, executable="codex", timeout=30, agent="codex"):
     """Execute a real local sandbox probe; never contacts a model or needs login."""
+    if agent != "codex":
+        workspace_environment(Path(workspace).resolve())
+        return probe_external(workspace, context, destination)
     workspace, context, destination = (Path(p).resolve() for p in (workspace, context, destination))
     if any(p.is_relative_to(workspace) or workspace.is_relative_to(p) for p in (context, destination)):
         raise ValueError("Context and recording directories must not overlap the writable workspace")
@@ -116,7 +121,8 @@ sys.exit(0 if results['workspace'] and not any(v for k,v in results.items() if k
 
 
 def optimize(workspace: Path, context: Path, destination: Path, *, executable="codex",
-             model="gpt-6-sol", reasoning_effort="medium", timeout=600) -> dict:
+             model="gpt-6-sol", reasoning_effort="medium", timeout=600,
+             selection=False, agent="codex", base_url=None) -> dict:
     """Allow tool writes only in the private workspace, with offline local build caches.
 
     The Codex controller writes its response/logs outside that writable root.
@@ -134,15 +140,19 @@ def optimize(workspace: Path, context: Path, destination: Path, *, executable="c
             raise ValueError("Context and recording directories must not overlap the writable workspace")
     env, local_environment = workspace_environment(workspace)
     destination.mkdir(parents=True, exist_ok=False)
-    prompt = (HERE / "prompt.md").read_text() + (
+    prompt = (HERE / ("selection.md" if selection else "prompt.md")).read_text() + (
         "\n\nController paths:\nWritable workspace: " + json.dumps(str(workspace))
         + "\nRead-only context: " + json.dumps(str(context)) + "\n"
         + f"Agent time budget: {timeout:g} seconds. Finish and submit within this limit.\n"
     )
-    schema = json.loads((HERE / "response.schema.json").read_text())
+    schema = json.loads((HERE / ("selection.schema.json" if selection else "response.schema.json")).read_text())
     (destination / "prompt.md").write_text(prompt)
     schema_path = destination / "response.schema.json"
     schema_path.write_text(json.dumps(schema, indent=2) + "\n")
+    if agent != "codex":
+        return validate_response(run_external(agent, executable, model, reasoning_effort, prompt, schema,
+                                 workspace, destination, workspace=workspace, environment=local_environment,
+                                 timeout=timeout, base_url=base_url), schema)
     response = destination / "response.json"
     configuration = sandbox_configuration(workspace, reasoning_effort)
     argv = [str(executable), "exec", "--model", model, "--ignore-user-config", "--ignore-rules",
@@ -155,7 +165,7 @@ def optimize(workspace: Path, context: Path, destination: Path, *, executable="c
              "-C", str(workspace), "-"]
     (destination / "command.json").write_text(json.dumps(argv, indent=2) + "\n")
     (destination / "settings.json").write_text(json.dumps({
-        "model": model, "reasoning_effort": reasoning_effort, "timeout_seconds": timeout,
+        "agent": agent, "executable": executable, "model": model, "reasoning_effort": reasoning_effort, "timeout_seconds": timeout,
         "cwd": str(workspace), "context": str(context), "environment": local_environment,
         "sandbox_configuration": configuration,
     }, indent=2) + "\n")

@@ -33,6 +33,16 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
+def record_progress(directory, phase, **details):
+    """Machine-readable phase evidence; console messages are only for convenience."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / "progress.jsonl").open("a") as handle:
+        handle.write(json.dumps({"schema_version": "component-progress/v1",
+                                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                                 "phase": phase, **details}, sort_keys=True) + "\n")
+
+
 def sha256(path):
     with Path(path).open("rb") as handle:
         return hashlib.file_digest(handle, "sha256").hexdigest()

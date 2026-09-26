@@ -30,7 +30,10 @@ dependency cache. Candidate snapshots include tracked edits and nonignored
 untracked files; the checkout is not changed. Keep dependencies compatible with
 the pinned application lockfile: changing unrelated dependency versions is rejected.
 
-Every invocation creates a new `.evaluator/runs/<timestamp>/`. Read `report.md`
+By default, each invocation creates `.evaluator/runs/<timestamp>/`. Use
+`--output /path/to/new-run` for a predictable directory; existing directories
+are never overwritten. `progress.jsonl` records preparation, correctness,
+timing blocks, and completion. Read `report.md`
 for the verdict and `report.json` for details. Command logs, source snapshots,
 output hashes, correctness outputs, captured indexing inputs, and raw
 `timings.json` remain available for inspection. Failed runs retain their evidence.

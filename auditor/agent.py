@@ -1,10 +1,12 @@
-"""Codex supplies hypotheses; the controller establishes experimental results."""
+"""The coding agent supplies hypotheses; the controller establishes experimental results."""
 
 import json
 import os
 from pathlib import Path
 import signal
 import subprocess
+
+from coding_agents.runtime import check_login, run as run_external
 
 HERE = Path(__file__).resolve().parent
 
@@ -33,27 +35,28 @@ def validate_response(value, schema=None):
     return value
 
 
-def check_login(executable):
-    result = subprocess.run([executable, "login", "status"], capture_output=True,
-                            text=True, timeout=30)
-    if result.returncode:
-        raise RuntimeError("Codex authentication is required. Run `codex login`, then retry. "
-                           + result.stderr.strip())
-
-
 def investigate(package, history, destination, *, executable="codex", model=None,
-                reasoning_effort=None, timeout=600):
+                reasoning_effort=None, timeout=600, agent="codex", base_url=None):
     destination.mkdir(parents=True, exist_ok=False)
     prompt = (HERE / "prompt.md").read_text() + "\n\nController history:\n" + json.dumps(history)
     (destination / "prompt.md").write_text(prompt)
+    model = model or configuration()["models"][agent]
+    reasoning_effort = reasoning_effort or configuration()["reasoning_effort"]
+    if agent != "codex":
+        schema = json.loads((HERE / "response.schema.json").read_text())
+        return validate_response(run_external(agent, executable, model, reasoning_effort, prompt, schema,
+                                              package, destination, timeout=timeout, base_url=base_url))
     response = destination / "response.json"
     argv = [executable, "exec", "--ignore-user-config", "--ignore-rules",
             "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral",
             "-c", 'approval_policy="never"', "-c", 'web_search="disabled"',
             "--json", "--output-schema", str(HERE / "response.schema.json"),
             "--output-last-message", str(response), "-C", str(package), "-"]
-    argv[2:2] = ["--model", model or configuration()["model"]]
+    argv[2:2] = ["--model", model]
     argv[2:2] = ["-c", "model_reasoning_effort=" + json.dumps(reasoning_effort or configuration()["reasoning_effort"])]
+    (destination / "settings.json").write_text(json.dumps({
+        "agent": agent, "executable": executable, "model": model, "reasoning_effort": reasoning_effort,
+        "timeout_seconds": timeout, "tool_policy": "Codex read-only sandbox"}, indent=2) + "\n")
     (destination / "command.json").write_text(json.dumps(argv, indent=2) + "\n")
     with (destination / "events.jsonl").open("wb") as stdout, (destination / "stderr.log").open("wb") as stderr:
         process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,

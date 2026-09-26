@@ -15,7 +15,7 @@ import tomllib
 from builds import prepare_variants, registry_packages, run_suites, setup_gui
 from capture_index import prepare_replay
 from core import (Commands, CorrectnessError, EvaluationError, analyse, compare,
-                  evaluator_fingerprint, inventory, markdown_report, sha256, write_json)
+                  evaluator_fingerprint, inventory, markdown_report, record_progress, sha256, write_json)
 from prepare_books import prepare_book
 from environment import build_environment, runtime_info
 
@@ -85,6 +85,7 @@ def input_manifest(root):
 
 def execute(args, run, report, commands, env):
     config = report["configuration"]
+    record_progress(run, "preparation_started")
     report["checker_validation"] = validate_checker(run / "checker-validation")
     for command in (["rustc", "-vV"], ["cargo", "--version"], ["node", "--version"],
                     ["npm", "--version"]):
@@ -136,9 +137,11 @@ def execute(args, run, report, commands, env):
         }
     input_hashes = {name: input_manifest(book["inputs"]) for name, book in books.items()}
     write_json(run / "book-inputs.json", input_hashes)
+    record_progress(run, "preparation_completed", books=list(books))
 
     correctness = {}
     for name, book in books.items():
+        record_progress(run, "correctness_started", book=name)
         print(f"Correctness: {name}", flush=True)
         root = run / "correctness" / name
         original_output = root / "original"
@@ -167,6 +170,7 @@ def execute(args, run, report, commands, env):
         correctness[name] = {"files": len(expected), "repeat_identical": True,
                              "candidate_identical": True, "capture_identical": True,
                              "index_replay_identical": book["search"]}
+        record_progress(run, "correctness_completed", book=name)
     report["correctness"] = correctness
     write_json(run / "correctness.json", correctness)
 
@@ -188,12 +192,14 @@ def execute(args, run, report, commands, env):
 
     book_ids = [entry["id"] for entry in entries]
     for block in range(config["warmups"]):
+        record_progress(run, "warmup_started", block=block)
         for book_id in book_ids:
             for metric in ("application", "index"):
                 for variant in VARIANTS:
                     measure(book_id, variant, metric, f"warmup-{block}")
     samples = []
     for block in range(config["repetitions"]):
+        record_progress(run, "timing_block_started", block=block)
         print(f"Timing block {block + 1}/{config['repetitions']}", flush=True)
         order = VARIANTS if block % 2 == 0 else tuple(reversed(VARIANTS))
         for book_id in book_ids:
@@ -203,6 +209,7 @@ def execute(args, run, report, commands, env):
                     sample["block"] = block
                     samples.append(sample)
                     write_json(run / "timings.json", samples)
+        record_progress(run, "timing_block_completed", block=block)
     for name, book in books.items():
         if input_hashes[name] != input_manifest(book["inputs"]):
             raise CorrectnessError(f"Prepared book inputs changed during evaluation: {name}")
@@ -221,6 +228,7 @@ def execute(args, run, report, commands, env):
         )
     else:
         report["status"] = report["analysis"]["verdict"]
+    record_progress(run, "analysis_completed", status=report["status"])
 
 
 def main():
@@ -229,6 +237,7 @@ def main():
     parser.add_argument("--candidate", type=Path, help="elasticlunr-rs Git checkout including local edits")
     parser.add_argument("--books", help="comma-separated IDs; default all ten, subset is recorded")
     parser.add_argument("--cache", type=Path, default=REPO / ".evaluator")
+    parser.add_argument("--output", type=Path, help="New run directory; existing directories are never overwritten")
     parser.add_argument("--cargo-home", type=Path)
     parser.add_argument("--browser", type=Path, help="installed Chrome/Chromium executable")
     parser.add_argument("--repetitions", type=int)
@@ -248,7 +257,8 @@ def main():
         if not set(args.books.split(",")) <= ids:
             parser.error("unknown --books IDs; see evaluator/books.json")
     args.cache = args.cache.resolve()
-    run = args.cache / "runs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    run = (args.output.resolve() if args.output else
+           args.cache / "runs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"))
     run.mkdir(parents=True, exist_ok=False)
     report = {"run": str(run), "mode": args.mode, "status": "incomplete",
               "configuration": config, "python": sys.version, "platform": platform.platform(),
@@ -273,6 +283,7 @@ def main():
         print(report["error"], file=sys.stderr)
     finally:
         write_json(run / "report.json", report)
+        record_progress(run, "finished", status=report["status"], error=report.get("error"))
         (run / "report.md").write_text(markdown_report(report))
     print(f"Status: {report['status']}. Report: {run / 'report.md'}")
     return 1 if report["status"] in ("incomplete", "correctness-failed", "calibration-warning") else 0

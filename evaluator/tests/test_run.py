@@ -18,6 +18,23 @@ class EvaluatorBoundaryTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
+    def test_explicit_output_directory_contains_result_and_phase_records(self):
+        output = self.root / "specified-run"
+        def execute(args, run, report, commands, env):
+            self.assertEqual(run, output.resolve())
+            report["status"] = "validated"
+        with patch.object(sys, "argv", ["run.py", "self-check", "--output", str(output)]), \
+                patch.object(evaluator, "build_environment", return_value={}), \
+                patch.object(evaluator, "runtime_info", return_value={}), \
+                patch.object(evaluator, "execute", side_effect=execute):
+            self.assertEqual(evaluator.main(), 0)
+        self.assertEqual(json.loads((output / "report.json").read_text())["status"], "validated")
+        progress = [json.loads(line) for line in (output / "progress.jsonl").read_text().splitlines()]
+        self.assertEqual(progress[-1]["phase"], "finished")
+        with patch.object(sys, "argv", ["run.py", "self-check", "--output", str(output)]):
+            with self.assertRaises(FileExistsError):
+                evaluator.main()
+
     def test_checker_exercises_actual_changed_missing_and_extra_outputs(self):
         root = self.root / "checker"
         result = evaluator.validate_checker(root)

@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from auditor.agent import check_login, configuration, investigate
+from unittest.mock import patch
 
 
 class AgentAdapterTests(unittest.TestCase):
@@ -37,7 +38,7 @@ print('{"type":"turn.completed"}')
         self.assertEqual(result["action"], "finish")
         self.assertIn("turn.completed", (self.root / "round/events.jsonl").read_text())
         argv = json.loads((self.root / "round/command.json").read_text())
-        self.assertEqual(argv[argv.index("--model") + 1], configuration()["model"])
+        self.assertEqual(argv[argv.index("--model") + 1], configuration()["models"]["codex"])
         self.assertIn('model_reasoning_effort="medium"', argv)
 
     def test_model_override_is_explicit(self):
@@ -48,6 +49,20 @@ Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps(
  "action":"finish","summary":"Inspected","findings":[],"probes":[]}))
 ''')
         investigate(self.root, [], self.root / "round", executable=executable, model="test-model")
+
+    def test_external_agents_receive_read_only_context_and_same_contract(self):
+        response = {"action": "finish", "summary": "Inspected", "findings": [], "probes": []}
+        for name in ("claude", "opencode"):
+            with patch("auditor.agent.run_external", return_value=response) as run:
+                result = investigate(self.root, [], self.root / name, executable=name,
+                                     agent=name, model="explicit-model", base_url="http://127.0.0.1:11434/v1" if name == "opencode" else None)
+            self.assertEqual(result, response)
+            self.assertEqual(run.call_args.args[:3], (name, name, "explicit-model"))
+            self.assertNotIn("workspace", run.call_args.kwargs)
+
+    def test_external_agent_cannot_bypass_response_validation(self):
+        with patch("auditor.agent.run_external", return_value={"action": "accept"}), self.assertRaises(ValueError):
+            investigate(self.root, [], self.root / "round", agent="claude")
 
     def test_login_failure_is_explicit(self):
         executable = self.executable("import sys\nsys.exit(1)\n")

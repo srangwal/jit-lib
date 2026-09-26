@@ -60,7 +60,7 @@ def main():
     try:
         run("environment", ["evaluator/environment.py"])
         run("books", ["evaluator/setup_books.py"])
-        for component in ("evaluator", "auditor", "optimizer"):
+        for component in ("evaluator", "auditor", "optimizer", "controller", "coding_agents"):
             run(f"{component}-tests", ["-m", "unittest", "discover", "-s", f"{component}/tests", "-v"])
         run("self-check", ["evaluator/run.py", "self-check"], accepted=(0, 1))
         reports = list((repo / ".evaluator/runs").glob("*/report.json"))

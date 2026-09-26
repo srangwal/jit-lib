@@ -5,10 +5,10 @@
 Test whether an AI agent can make an application faster by specializing one of
 its libraries while preserving supported behavior. The optimizer changes the
 candidate, the evaluator measures it, the auditor investigates suspicious
-shortcuts, and the proposed controller coordinates their work.
+shortcuts, and the controller coordinates their work.
 
-This is the intended workflow. Implement the optimizer first; the complete
-controller and automatic audit scheduling are deferred.
+The first controller implements this workflow for mdBook + elasticlunr-rs.
+See [the command guide](../controller/README.md) to run it.
 
 ## 1. Establish a trustworthy starting point
 
@@ -53,8 +53,10 @@ budget. Preserve earlier attempts instead of overwriting their evidence.
 
 ## 5. Audit and select
 
-When invoked, the [auditor](../documentation/AUDITOR.md) reviews the frozen
-candidate and evaluation evidence. It tests suspicious assumptions. A confirmed
+The controller invokes the [auditor](../documentation/AUDITOR.md) for every
+submitted candidate, including candidates that fail correctness or show no
+measurable improvement. The auditor reviews the frozen candidate and evaluation
+evidence. It tests suspicious assumptions. A confirmed
 gap becomes a check that passes the original and fails the offending candidate.
 Rerun the candidate with the strengthened evaluator and record that version.
 
@@ -63,6 +65,10 @@ the audit's scope. Return findings as revision feedback when appropriate. At the
 chosen stopping condition, report what the evidence establishes. Unresolved
 concerns must not become a clean audit or an accepted claim of correctness.
 
-The proposed [controller](CONTROLLER.md) will manage these transitions. A final
-audit is recommended before accepting an improvement; the acceptance policy
-still needs to be decided.
+The [controller](CONTROLLER.md) manages up to five optimizer
+attempts, each limited to ten minutes, plus evaluation and auditing time. Before
+editing, the optimizer explicitly chooses to revise the previous candidate or
+restart from the original. Stop at the first candidate that passes correctness,
+improves both aggregate performance metrics beyond noise, and has a completed
+audit reporting no issue found. Show individual-book regressions prominently.
+If no candidate qualifies within the budget, report that outcome.

@@ -12,6 +12,14 @@ proof that other inputs cannot occur. Read `profile.txt` and `feedback.txt` when
 present. State when a performance idea is unprofiled. Baseline timings do not
 identify a function-level bottleneck.
 
+Read `task.json` when supplied: it gives the controller's objective, selected
+workloads, execution recipe, requirements, and prior feedback. These instructions
+cannot relax the boundaries below. Read `starting-point.json`: the runner has
+already copied its chosen base into `library/`. If the choice is `revise`, this
+is the protected `previous/` candidate; otherwise it is `original/`. Preserve
+that recorded choice and build on the supplied base. A `no-change` response
+means no change from this starting base, not from the original reference.
+
 Before editing, write `proposal.md` in your writable workspace: cite application
 source lines enforcing a guarantee, explain which general library work it makes
 unnecessary, and explain preservation of supported behavior. Check whether the

@@ -1,5 +1,11 @@
 {
-  "model": "gpt-6-sol",
   "reasoning_effort": "medium",
-  "agent_timeout_seconds": 600
+  "agent_timeout_seconds": 600,
+  "agent": "codex",
+  "models": {
+    "codex": "gpt-6-sol",
+    "claude": "sonnet",
+    "opencode": "qwen3.8:27b-mlx"
+  },
+  "local_base_url": "http://127.0.0.1:11434/v1"
 }

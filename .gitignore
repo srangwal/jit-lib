@@ -1,5 +1,6 @@
 /.evaluator/
 /.auditor/
 /.optimizer/
+/.controller/
 /old-docs/
 __pycache__/

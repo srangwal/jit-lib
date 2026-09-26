@@ -12,17 +12,20 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from auditor.agent import check_login
-from evaluator.core import evaluator_fingerprint, inventory, write_json
+from coding_agents.runtime import check_login
+from coding_agents.config import add_arguments, apply_arguments, EXECUTABLES, snapshot
+from evaluator.core import evaluator_fingerprint, inventory, record_progress, write_json
 from optimizer.agent import optimize, probe_workspace
 from optimizer.artifacts import copy_files, freeze, seed_cargo_cache
 from optimizer.context import prepare_context
+from optimizer.task import prepare_task_inputs
 
 HERE = Path(__file__).resolve().parent
 
@@ -32,6 +35,9 @@ def report_markdown(report):
              "This attempt has no independent correctness or performance verdict.", ""]
     if "error" in report:
         lines += [f"Error: {report['error']}", ""]
+    if "starting_point" in report:
+        choice = report["starting_point"]
+        lines += [f"Starting point: **{choice['choice']}**. {choice['reason']}", ""]
     if "response" in report:
         response = report["response"]
         lines += [response["summary"], "", "## Rationale", ""]
@@ -59,12 +65,12 @@ def report_markdown(report):
     return "\n".join(lines) + "\n"
 
 
-def runtime(executable):
+def runtime(executable, agent="codex"):
     if platform.system() != "Darwin" or not Path("/usr/bin/sandbox-exec").is_file():
         raise RuntimeError("Optimizer v1 requires macOS with sandbox-exec; no unsandboxed fallback")
     toolchain = tomllib.loads((REPO / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     versions = {}
-    for name, argv in (("codex", [executable, "--version"]),
+    for name, argv in ((agent, [executable, "--version"]),
                        ("rustc", ["rustup", "run", toolchain, "rustc", "--version"]),
                        ("cargo", ["rustup", "run", toolchain, "cargo", "--version"])):
         result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
@@ -81,14 +87,19 @@ def main(argv=None):
     parser.add_argument("--baseline", type=Path, required=True, help="A completed, validated self-check run")
     parser.add_argument("--profile", type=Path, help="Optional measured profile to include as context")
     parser.add_argument("--feedback", type=Path, help="Optional prior evaluator/auditor feedback file")
+    parser.add_argument("--task", type=Path, help="Optional optimizer-task/v1 controller brief")
+    parser.add_argument("--previous-candidate", type=Path, help="Candidate offered for an explicit revise/restart choice")
     parser.add_argument("--output", type=Path, help="New attempt directory; existing directories are never overwritten")
     parser.add_argument("--cargo-home", type=Path, default=Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")),
                         help="Read existing crate archives from this cache; never modify it")
-    parser.add_argument("--codex", default="codex", help="Codex CLI executable")
-    parser.add_argument("--model", default=config["model"])
+    add_arguments(parser, config)
+    parser.add_argument("--codex", help="Legacy alias for --agent-executable with --agent codex")
     parser.add_argument("--reasoning-effort", choices=("low", "medium", "high", "xhigh"), default=config["reasoning_effort"])
     parser.add_argument("--timeout", type=float, default=config["agent_timeout_seconds"], help="Agent wall-clock limit in seconds")
     args = parser.parse_args(argv)
+    apply_arguments(parser, args, config)
+    if args.codex and (args.agent != "codex" or args.agent_executable):
+        parser.error("--codex is only an executable override for Codex")
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error("--timeout must be positive and finite")
     if not args.model.strip():
@@ -103,38 +114,78 @@ def main(argv=None):
         output.mkdir(parents=True, exist_ok=False)
     except FileExistsError:
         parser.error(f"Attempt already exists: {output}")
-    executable = shutil.which(args.codex)
+    executable_name = args.agent_executable or args.codex or EXECUTABLES[args.agent]
+    executable = shutil.which(executable_name)
     if executable:
         executable = str(Path(executable).absolute())
     report = {"status": "incomplete", "attempt": str(output), "baseline": str(args.baseline.resolve()),
               "started_utc": datetime.now(timezone.utc).isoformat(), "invocation": list(argv if argv is not None else sys.argv[1:]),
-              "settings": {"model": args.model, "reasoning_effort": args.reasoning_effort, "timeout_seconds": args.timeout},
+              "settings": {"agent": args.agent, "model": args.model, "local_base_url": args.local_base_url,
+                           "reasoning_effort": args.reasoning_effort if args.agent != "opencode" else None, "timeout_seconds": args.timeout},
+              "coding_agents_version": snapshot(output / "coding-agents-source"),
               "optimizer_version": evaluator_fingerprint(HERE)}
     write_json(output / "report.json", report)
     try:
         if not executable:
-            raise RuntimeError(f"Codex CLI was not found: {args.codex}")
-        report["runtime"] = runtime(executable)
-        check_login(executable)
+            raise RuntimeError(f"{args.agent} CLI was not found: {executable_name}")
+        report["runtime"] = runtime(executable, args.agent)
+        check_login(executable, args.agent)
         print("Preparing baseline context and private library copy...", flush=True)
+        record_progress(output, "context_preparation_started")
         context, workspace = output / "context", output / "workspace"
         report["input_identity"] = prepare_context(args.baseline, context, profile=args.profile, feedback=args.feedback)
+        report["controller_inputs"] = prepare_task_inputs(context, task=args.task, previous_candidate=args.previous_candidate)
         protected = inventory(context)
         workspace.mkdir()
-        copy_files(context / "original", workspace / "library", inventory(context / "original"))
         report["cargo_cache"] = seed_cargo_cache(args.cargo_home.resolve(), workspace / "cargo-home", context / "original/Cargo.lock")
+        record_progress(output, "context_preparation_completed", context="context/identity.json")
         print("Checking that tools can write only inside the private workspace...", flush=True)
-        report["write_boundary_check"] = probe_workspace(workspace, context, output / "boundary-check", executable=executable)
+        record_progress(output, "boundary_probe_started")
+        report["write_boundary_check"] = probe_workspace(workspace, context, output / "boundary-check", executable=executable, agent=args.agent)
+        record_progress(output, "boundary_probe_completed", evidence="boundary-check/result.json")
+        deadline = time.monotonic() + args.timeout
+        record_progress(output, "choice_started", previous_candidate_available=args.previous_candidate is not None)
+        choice = {"choice": "restart", "reason": "No previous candidate was supplied."}
+        if args.previous_candidate is not None:
+            selection_workspace = output / "selection-workspace"
+            selection_workspace.mkdir()
+            print("Choosing whether to revise the previous candidate or restart...", flush=True)
+            choice = optimize(selection_workspace, context, output / "selection", executable=executable,
+                              model=args.model, reasoning_effort=args.reasoning_effort,
+                              timeout=max(0.001, deadline - time.monotonic()), selection=True,
+                              agent=args.agent, base_url=args.local_base_url)
+            if choice.get("choice") not in {"revise", "restart"} or not isinstance(choice.get("reason"), str) or not choice["reason"].strip():
+                raise ValueError("Starting-point choice must be revise/restart with a nonempty reason")
+            if inventory(context) != protected:
+                raise RuntimeError("Protected context changed during starting-point selection")
+        starting_library = context / ("previous" if choice["choice"] == "revise" else "original")
+        report["starting_point"] = {**choice, "source": str(starting_library.relative_to(output)),
+                                    "files": inventory(starting_library)}
+        write_json(output / "starting-point.json", report["starting_point"])
+        write_json(output / "report.json", report)
+        record_progress(output, "choice_completed", choice=choice["choice"], evidence="starting-point.json")
+        write_json(context / "starting-point.json", report["starting_point"])
+        (context / "starting-point.json").chmod(0o444)
+        protected = inventory(context)
+        copy_files(starting_library, workspace / "library", inventory(starting_library))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Optimizer time budget exhausted during starting-point selection")
         print(f"Starting one {args.timeout:g}-second optimizer attempt. Logs: {output / 'agent'}", flush=True)
+        record_progress(output, "edit_started", remaining_seconds=remaining)
         response = optimize(workspace, context, output / "agent", executable=executable, model=args.model,
-                            reasoning_effort=args.reasoning_effort, timeout=args.timeout)
+                            reasoning_effort=args.reasoning_effort, timeout=remaining, agent=args.agent, base_url=args.local_base_url)
         report["response"] = response
-        if inventory(context) != protected or evaluator_fingerprint(HERE) != report["optimizer_version"]:
+        record_progress(output, "edit_completed", response_status=response["status"], evidence="agent/response.json")
+        if (inventory(context) != protected or evaluator_fingerprint(HERE) != report["optimizer_version"]
+                or evaluator_fingerprint(REPO / "coding_agents") != report["coding_agents_version"]):
             raise RuntimeError("Protected context or optimizer source changed during the attempt")
-        report["candidate"] = freeze(workspace, context, output, response)
+        report["candidate"] = freeze(workspace, context, output, response, starting_library=starting_library)
         report["status"] = "candidate-created" if report["candidate"] else "no-change"
+        record_progress(output, "export_completed", status=report["status"], evidence="changes.json")
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         report["error"] = str(error) or type(error).__name__
+        record_progress(output, "error", error_type=type(error).__name__, evidence="report.json")
     finally:
         report["finished_utc"] = datetime.now(timezone.utc).isoformat()
         write_json(output / "report.json", report)

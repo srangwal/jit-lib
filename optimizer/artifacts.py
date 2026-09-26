@@ -80,7 +80,7 @@ def validate_submission(response, context, workspace, changed):
             reference(value, "original", context)
 
 
-def freeze(workspace, context, destination, response):
+def freeze(workspace, context, destination, response, *, starting_library=None):
     """Export an independent Git-visible snapshot; create no commits."""
     original = inventory(context / "original")
     candidate = source_inventory(workspace / "library")
@@ -93,10 +93,16 @@ def freeze(workspace, context, destination, response):
         raise ValueError("Candidate is missing Cargo.toml")
     diff = differences(original, candidate)
     changed = any(diff.values())
-    validate_submission(response, context, workspace, changed)
+    starting = inventory(starting_library) if starting_library is not None else dict(original)
+    starting.pop("Cargo.lock", None)
+    attempt_diff = differences(starting, candidate)
+    validate_submission(response, context, workspace, any(attempt_diff.values()))
     write_json(destination / "changes.json", diff)
-    if not changed:
+    write_json(destination / "attempt-changes.json", attempt_diff)
+    if response["status"] == "no-change":
         return None
+    if not changed:
+        raise ValueError("Candidate reverted to the original library without a specialization")
     proposal = safe_path(workspace, "proposal.md")
     if not proposal.is_file() or not proposal.read_text().strip():
         raise ValueError("Candidate is missing proposal.md")
