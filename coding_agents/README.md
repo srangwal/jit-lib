@@ -14,7 +14,7 @@ OpenAI-compatible model server before running an attempt.
 | `--agent` | CLI | Default model |
 | --- | --- | --- |
 | `codex` | `codex` | `gpt-6-sol` |
-| `claude` | `claude` | `sonnet` |
+| `claude` | `claude` | `claude-opus-5` |
 | `opencode` | `opencode` | `qwen3.8:27b-mlx` |
 
 Both components default to Codex. Their `config.json` files define the agent,
@@ -22,7 +22,7 @@ model defaults, and local endpoint. Select explicitly for a standalone run:
 
 ```sh
 python3 optimizer/run.py --baseline .evaluator/runs/<self-check-run-id> \
-  --agent claude --model sonnet
+  --agent claude --model claude-opus-5
 python3 auditor/run.py --evaluation .evaluator/runs/<run-id> \
   --agent opencode --model qwen3.8:27b-mlx \
   --local-base-url http://127.0.0.1:11434/v1
@@ -36,15 +36,15 @@ neither downloads a model nor starts the server. There is no cloud fallback.
 Use `--agent-executable /path/to/cli` if the executable is not on `PATH`.
 `--model` overrides the selected agent's default. Codex and Claude use medium
 reasoning by default; OpenCode has no reasoning-effort setting and records null.
-Claude's `sonnet` alias can change with the installed CLI. Use a full model ID to
-pin it; `settings.json` also records the model names reported by Claude.
+Claude defaults to the explicit `claude-opus-5` model ID. `settings.json` also
+records the model names reported by Claude.
 
 The controller selects the two agents independently:
 
 ```sh
 python3 controller/run.py --baseline .evaluator/runs/<self-check-run-id> \
   --optimizer-agent opencode --optimizer-model qwen3.8:27b-mlx \
-  --auditor-agent claude --auditor-model sonnet \
+  --auditor-agent claude --auditor-model claude-opus-5 \
   --local-base-url http://127.0.0.1:11434/v1
 ```
 

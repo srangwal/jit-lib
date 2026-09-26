@@ -56,7 +56,7 @@ Choose the optimizer and auditor agents independently:
 ```sh
 python3 controller/run.py --baseline .evaluator/runs/<self-check-run-id> \
   --optimizer-agent opencode --optimizer-model qwen3.8:27b-mlx \
-  --auditor-agent claude --auditor-model sonnet \
+  --auditor-agent claude --auditor-model claude-opus-5 \
   --local-base-url http://127.0.0.1:11434/v1
 ```
 

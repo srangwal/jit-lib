@@ -124,7 +124,7 @@ sys.exit(1)
                              'CLAUDE_CODE_USE_VERTEX': '0', 'CLAUDE_CODE_USE_FOUNDRY': '0', 'NO_PROXY': '*'}
                 try:
                     with patch.dict(os.environ, overrides):
-                        result = run(agent, executable, 'sonnet' if agent == 'claude' else 'fake-local',
+                        result = run(agent, executable, 'claude-opus-5' if agent == 'claude' else 'fake-local',
                             'medium', 'Use the shell tool, then return the requested JSON.',
                             {'type': 'object', 'properties': {'status': {'type': 'string'}},
                              'required': ['status'], 'additionalProperties': False},

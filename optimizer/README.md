@@ -35,7 +35,7 @@ Choose an agent with `--agent codex|claude|opencode`. For example:
 
 ```sh
 python3 optimizer/run.py --baseline .evaluator/runs/<self-check-run-id> \
-  --agent claude --model sonnet
+  --agent claude --model claude-opus-5
 python3 optimizer/run.py --baseline .evaluator/runs/<self-check-run-id> \
   --agent opencode --model qwen3.8:27b-mlx \
   --local-base-url http://127.0.0.1:11434/v1

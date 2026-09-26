@@ -72,7 +72,7 @@ class RunTests(unittest.TestCase):
         self.assertFalse((self.output / "candidate").exists())
 
     def test_runtime_selection_reaches_optimizer_and_report(self):
-        for selected, model, endpoint in (("claude", "sonnet", None),
+        for selected, model, endpoint in (("claude", "claude-opus-5", None),
                 ("opencode", "qwen3.8:27b-mlx", "http://127.0.0.1:11434/v1")):
             output = self.root / selected
             with patch("optimizer.run.optimize", return_value=response("no-change")) as optimize:

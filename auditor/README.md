@@ -18,7 +18,7 @@ Choose another runtime without changing the audit checks:
 
 ```sh
 python3 auditor/run.py --evaluation .evaluator/runs/<run-id> \
-  --agent claude --model sonnet
+  --agent claude --model claude-opus-5
 python3 auditor/run.py --evaluation .evaluator/runs/<run-id> \
   --agent opencode --model qwen3.8:27b-mlx \
   --local-base-url http://127.0.0.1:11434/v1
@@ -94,7 +94,7 @@ writes, and blocked network/fork access. This is not a VM or a disk/memory quota
 The optional full rerun uses the evaluator's existing build/test execution model,
 which does not sandbox candidate build scripts or upstream test suites.
 
-`config.json` selects the agent and its model: `gpt-6-sol` for Codex, `sonnet`
+`config.json` selects the agent and its model: `gpt-6-sol` for Codex, `claude-opus-5`
 for Claude, and `qwen3.8:27b-mlx` for OpenCode. `--model` overrides that default.
 Codex and Claude use medium reasoning by default; OpenCode records reasoning
 as unset. Codex uses its native read-only sandbox. Claude and OpenCode use a
