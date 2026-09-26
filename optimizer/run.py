@@ -12,7 +12,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import time
 import tomllib
 
 REPO = Path(__file__).resolve().parents[1]
@@ -23,9 +22,10 @@ from coding_agents.runtime import check_login
 from coding_agents.config import add_arguments, apply_arguments, EXECUTABLES, snapshot
 from evaluator.core import evaluator_fingerprint, inventory, record_progress, write_json
 from optimizer.agent import optimize, probe_workspace
-from optimizer.artifacts import copy_files, freeze, seed_cargo_cache
+from optimizer.artifacts import freeze, seed_cargo_cache
 from optimizer.context import prepare_context
 from optimizer.task import prepare_task_inputs
+from optimizer.checkpoints import BaseCheckpoints
 
 HERE = Path(__file__).resolve().parent
 
@@ -37,7 +37,7 @@ def report_markdown(report):
         lines += [f"Error: {report['error']}", ""]
     if "starting_point" in report:
         choice = report["starting_point"]
-        lines += [f"Starting point: **{choice['choice']}**. {choice['reason']}", ""]
+        lines += [f"Starting point: **{choice['base_candidate_id']}**. {choice['reason']}", ""]
     if "response" in report:
         response = report["response"]
         lines += [response["summary"], "", "## Rationale", ""]
@@ -58,7 +58,8 @@ def report_markdown(report):
         lines += ["", "## Candidate", "", "See `candidate/`, `candidate.patch`, and `candidate-files.json`.",
                   "The snapshot has its own Git index and no commits. Keep it unchanged when evaluating it.",
                   "", "From the repository root:", "", "```sh",
-                  "python3 evaluator/run.py run --candidate " + shlex.quote(str(Path(report["attempt"]) / "candidate")), "```"]
+                  "python3 evaluator/run.py run --candidate " + shlex.quote(str(Path(report["attempt"]) / "candidate"))
+                  + " --library-reduction-target-percent " + str(report["controller_inputs"]["objective"]["library_reduction_target_percent"]), "```"]
     if "input_identity" in report:
         lines += ["", "## Input limitations", ""]
         lines += ["- " + item for item in report["input_identity"]["limitations"]]
@@ -88,7 +89,8 @@ def main(argv=None):
     parser.add_argument("--profile", type=Path, help="Optional measured profile to include as context")
     parser.add_argument("--feedback", type=Path, help="Optional prior evaluator/auditor feedback file")
     parser.add_argument("--task", type=Path, help="Optional optimizer-task/v1 controller brief")
-    parser.add_argument("--previous-candidate", type=Path, help="Candidate offered for an explicit revise/restart choice")
+    parser.add_argument("--previous-candidate", type=Path, help="Legacy candidate available as base ID previous")
+    parser.add_argument("--history", type=Path, help="Complete optimizer-history/v1 bundle")
     parser.add_argument("--output", type=Path, help="New attempt directory; existing directories are never overwritten")
     parser.add_argument("--cargo-home", type=Path, default=Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")),
                         help="Read existing crate archives from this cache; never modify it")
@@ -134,7 +136,7 @@ def main(argv=None):
         record_progress(output, "context_preparation_started")
         context, workspace = output / "context", output / "workspace"
         report["input_identity"] = prepare_context(args.baseline, context, profile=args.profile, feedback=args.feedback)
-        report["controller_inputs"] = prepare_task_inputs(context, task=args.task, previous_candidate=args.previous_candidate)
+        report["controller_inputs"] = prepare_task_inputs(context, task=args.task, previous_candidate=args.previous_candidate, history=args.history)
         protected = inventory(context)
         workspace.mkdir()
         report["cargo_cache"] = seed_cargo_cache(args.cargo_home.resolve(), workspace / "cargo-home", context / "original/Cargo.lock")
@@ -143,46 +145,31 @@ def main(argv=None):
         record_progress(output, "boundary_probe_started")
         report["write_boundary_check"] = probe_workspace(workspace, context, output / "boundary-check", executable=executable, agent=args.agent)
         record_progress(output, "boundary_probe_completed", evidence="boundary-check/result.json")
-        deadline = time.monotonic() + args.timeout
-        record_progress(output, "choice_started", previous_candidate_available=args.previous_candidate is not None)
-        choice = {"choice": "restart", "reason": "No previous candidate was supplied."}
-        if args.previous_candidate is not None:
-            selection_workspace = output / "selection-workspace"
-            selection_workspace.mkdir()
-            print("Choosing whether to revise the previous candidate or restart...", flush=True)
-            choice = optimize(selection_workspace, context, output / "selection", executable=executable,
-                              model=args.model, reasoning_effort=args.reasoning_effort,
-                              timeout=max(0.001, deadline - time.monotonic()), selection=True,
-                              agent=args.agent, base_url=args.local_base_url)
-            if choice.get("choice") not in {"revise", "restart"} or not isinstance(choice.get("reason"), str) or not choice["reason"].strip():
-                raise ValueError("Starting-point choice must be revise/restart with a nonempty reason")
-            if inventory(context) != protected:
-                raise RuntimeError("Protected context changed during starting-point selection")
-        starting_library = context / ("previous" if choice["choice"] == "revise" else "original")
-        report["starting_point"] = {**choice, "source": str(starting_library.relative_to(output)),
-                                    "files": inventory(starting_library)}
-        write_json(output / "starting-point.json", report["starting_point"])
-        write_json(output / "report.json", report)
-        record_progress(output, "choice_completed", choice=choice["choice"], evidence="starting-point.json")
-        write_json(context / "starting-point.json", report["starting_point"])
-        (context / "starting-point.json").chmod(0o444)
-        protected = inventory(context)
-        copy_files(starting_library, workspace / "library", inventory(starting_library))
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise RuntimeError("Optimizer time budget exhausted during starting-point selection")
-        print(f"Starting one {args.timeout:g}-second optimizer attempt. Logs: {output / 'agent'}", flush=True)
-        record_progress(output, "edit_started", remaining_seconds=remaining)
+        checkpoints = BaseCheckpoints(workspace, context, output, report)
+        print(f"Starting one {args.timeout:g}-second optimizer session. Logs: {output / 'agent'}", flush=True)
+        record_progress(output, "session_started", remaining_seconds=args.timeout)
         response = optimize(workspace, context, output / "agent", executable=executable, model=args.model,
-                            reasoning_effort=args.reasoning_effort, timeout=remaining, agent=args.agent, base_url=args.local_base_url)
+                            reasoning_effort=args.reasoning_effort, timeout=args.timeout, agent=args.agent,
+                            base_url=args.local_base_url, checkpoint_handler=checkpoints)
+        checkpoints.verify()
         report["response"] = response
-        record_progress(output, "edit_completed", response_status=response["status"], evidence="agent/response.json")
+        record_progress(output, "session_completed", response_status=response["status"], evidence="agent/response.json")
         if (inventory(context) != protected or evaluator_fingerprint(HERE) != report["optimizer_version"]
                 or evaluator_fingerprint(REPO / "coding_agents") != report["coding_agents_version"]):
             raise RuntimeError("Protected context or optimizer source changed during the attempt")
-        report["candidate"] = freeze(workspace, context, output, response, starting_library=starting_library)
+        if checkpoints.starting_library is None:
+            if response["status"] != "no-change" or (workspace / "library").exists():
+                raise ValueError("A candidate requires a trusted base checkpoint before editing")
+            from auditor.agent import validate_response
+            validate_response(response, json.loads((HERE / "response.schema.json").read_text()))
+            if not response["summary"].strip():
+                raise ValueError("Optimizer must explain its result")
+            report["candidate"] = None
+        else:
+            report["candidate"] = freeze(workspace, context, output, response, starting_library=checkpoints.starting_library)
         report["status"] = "candidate-created" if report["candidate"] else "no-change"
-        record_progress(output, "export_completed", status=report["status"], evidence="changes.json")
+        record_progress(output, "export_completed", status=report["status"],
+                        evidence="changes.json" if checkpoints.starting_library is not None else "report.json")
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         report["error"] = str(error) or type(error).__name__
         record_progress(output, "error", error_type=type(error).__name__, evidence="report.json")

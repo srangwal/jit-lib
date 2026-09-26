@@ -99,8 +99,8 @@ must not label a candidate successful on the optimizer's assertion alone.
   20%), and a completed audit reporting no issue found. Application timing is
   reported separately and does not block library success. No issue found is limited to the
   audit's scope; it is not proof that no violation exists.
-- Let the optimizer explicitly choose whether to revise the previous candidate
-  or restart from the original. Record the choice and its reason before editing.
+- Let the optimizer choose the original or any earlier candidate, and combine
+  compatible ideas. Record the base, contributing parents, and reason before editing.
   Always compare candidates against the unchanged original library.
 - Measure library indexing, serialization, and cleanup with the existing timer.
   Use equal book weights and prominently show individual-book regressions.
@@ -111,12 +111,11 @@ must not label a candidate successful on the optimizer's assertion alone.
 These policies are implemented by the controller. Standalone component commands
 perform one operation and do not run the experiment loop.
 
-## Agreed next step: complete candidate history
+## Complete candidate history
 
-This is the approved design; the current implementation still supplies the
-latest candidate and feedback. Before every attempt, the controller will provide
-a concise table of **every** earlier candidate, plus read-only access to the
-complete supporting evidence.
+Before every attempt, the controller provides a concise table of **every**
+earlier attempt, plus read-only access to the supporting evidence. The optimizer
+uses one continuous session to investigate, choose a base, edit, and test.
 
 | Each entry contains | Purpose |
 | --- | --- |
@@ -128,12 +127,18 @@ complete supporting evidence.
 The optimizer may choose any earlier candidate, combine compatible ideas from
 several candidates, or restart from the original. Before editing, record the
 chosen starting snapshot, all contributing candidate IDs, and the reason for
-the choice. The new candidate records those parent links and its exact patch so
+the choice. A trusted runner checkpoint copies the chosen library into the workspace.
+The new candidate records those parent links and its exact patch so
 a reader can follow its evolution. Combining ideas creates a new candidate that
 needs fresh evaluation and audit; parent results do not transfer automatically.
 
 Preserve old measurements with their evaluator version and mark them stale when
 checks change. Every candidate still compares against the unchanged original.
 Missing evidence and attempts that produced no candidate remain visible.
+
+The full workload is available to the optimizer, but is not an exhaustive list
+of supported inputs. Require correct behavior for new book contents and supported
+configurations. Workload patterns guide optimization; application guarantees or
+correct runtime guards justify restrictive assumptions.
 
 See [WORKFLOW.md](WORKFLOW.md) for how the roles connect.

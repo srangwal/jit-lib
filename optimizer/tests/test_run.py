@@ -43,8 +43,15 @@ class RunTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return main(argv or self.argv)
 
+    def select(self, workspace, kwargs, base="original", request_id="first"):
+        (workspace / "base-request.json").write_text(json.dumps({
+            "request_id": request_id, "base_candidate_id": base,
+            "contributing_candidate_ids": [], "reason": "Use source-backed approach."}))
+        kwargs["checkpoint_handler"]()
+
     def test_candidate_is_exported_without_evaluation_and_metadata_is_saved(self):
         def optimize(workspace, context, destination, **kwargs):
+            self.select(workspace, kwargs)
             (workspace / "library/src/lib.rs").write_text("candidate\n")
             (workspace / "proposal.md").write_text("A proposal\n")
             return response()
@@ -83,26 +90,25 @@ class RunTests(unittest.TestCase):
             self.run_cli(self.argv + ["--agent", "opencode", "--local-base-url", "https://example.com/v1"])
         self.assertFalse(self.output.exists())
 
-    def test_progress_records_ordered_phases_and_choice_before_editing(self):
+    def test_progress_records_checkpoint_during_single_session(self):
         def optimize(workspace, context, destination, **kwargs):
-            records = [json.loads(line) for line in (self.output / "progress.jsonl").read_text().splitlines()]
-            phases = [record["phase"] for record in records]
-            self.assertIn("choice_completed", phases)
-            self.assertEqual(phases[-1], "edit_started")
+            self.assertFalse((workspace / "library").exists())
+            self.select(workspace, kwargs)
             return response("no-change")
-        with patch("optimizer.run.optimize", side_effect=optimize):
+        with patch("optimizer.run.optimize", side_effect=optimize) as agent:
             self.assertEqual(self.run_cli(), 0)
+        self.assertEqual(agent.call_count, 1)
         records = [json.loads(line) for line in (self.output / "progress.jsonl").read_text().splitlines()]
         self.assertEqual([record["phase"] for record in records], [
             "context_preparation_started", "context_preparation_completed", "boundary_probe_started",
-            "boundary_probe_completed", "choice_started", "choice_completed", "edit_started",
-            "edit_completed", "export_completed"])
+            "boundary_probe_completed", "session_started", "base_selected",
+            "session_completed", "export_completed"])
 
     def test_failure_progress_preserves_completed_and_unfinished_phases(self):
         with patch("optimizer.run.optimize", side_effect=RuntimeError("Agent failed")):
             self.assertEqual(self.run_cli(), 1)
         records = [json.loads(line) for line in (self.output / "progress.jsonl").read_text().splitlines()]
-        self.assertEqual([record["phase"] for record in records][-2:], ["edit_started", "error"])
+        self.assertEqual([record["phase"] for record in records][-2:], ["session_started", "error"])
         self.assertEqual(records[-1]["error_type"], "RuntimeError")
         self.assertEqual(json.loads((self.output / "report.json").read_text())["status"], "incomplete")
 
@@ -115,55 +121,60 @@ class RunTests(unittest.TestCase):
         (previous / ".git/config").write_text("ignored metadata")
         return previous
 
-    def test_revision_choice_is_recorded_before_editing_and_uses_previous_source(self):
+    def test_any_base_is_selected_and_edited_in_one_session(self):
         previous = self.previous()
-        calls = []
         def optimize(workspace, context, destination, **kwargs):
-            calls.append(kwargs)
-            if kwargs.get("selection"):
-                self.assertFalse((self.output / "workspace/library").exists())
-                self.assertNotEqual(workspace, self.output / "workspace")
-                return {"choice": "revise", "reason": "Keep the prior improvement."}
+            self.select(workspace, kwargs, "previous")
             self.assertEqual((workspace / "library/src/lib.rs").read_text(), "previous\n")
-            self.assertEqual(json.loads((context / "starting-point.json").read_text())["choice"], "revise")
-            self.assertEqual(json.loads((self.output / "report.json").read_text())["starting_point"]["choice"], "revise")
+            self.assertEqual(json.loads((self.output / "starting-point.json").read_text())["base_candidate_id"], "previous")
             (workspace / "library/src/lib.rs").write_text("revised\n")
             (workspace / "proposal.md").write_text("Revision evidence")
             return response()
-        with patch("optimizer.run.optimize", side_effect=optimize):
+        with patch("optimizer.run.optimize", side_effect=optimize) as agent:
             self.assertEqual(self.run_cli(self.argv + ["--previous-candidate", str(previous)]), 0)
-        self.assertLess(calls[1]["timeout"], calls[0]["timeout"])
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual(agent.call_args.kwargs["timeout"], 600)
         self.assertEqual((previous / "src/lib.rs").read_text(), "previous\n")
         self.assertEqual((self.output / "candidate/src/lib.rs").read_text(), "revised\n")
         self.assertFalse((self.output / "context/previous/.git").exists())
 
     def test_revision_no_change_is_relative_to_selected_candidate(self):
-        with patch("optimizer.run.optimize", side_effect=[{"choice": "revise", "reason": "Investigate prior attempt."}, response("no-change")]):
+        def optimize(workspace, context, destination, **kwargs):
+            self.select(workspace, kwargs, "previous")
+            return response("no-change")
+        with patch("optimizer.run.optimize", side_effect=optimize):
             self.assertEqual(self.run_cli(self.argv + ["--previous-candidate", str(self.previous())]), 0)
-        self.assertEqual(json.loads((self.output / "report.json").read_text())["status"], "no-change")
         self.assertFalse((self.output / "candidate").exists())
 
-    def test_restart_choice_uses_original_and_preserves_previous(self):
-        with patch("optimizer.run.optimize", side_effect=[{"choice": "restart", "reason": "The prior idea was invalid."}, response("no-change")]):
+    def test_switching_base_retains_abandoned_work_and_final_parent(self):
+        def optimize(workspace, context, destination, **kwargs):
+            self.select(workspace, kwargs, "previous")
+            (workspace / "library/src/lib.rs").write_text("abandoned idea")
+            self.select(workspace, kwargs, "original", "second")
+            self.assertEqual((workspace / "library/src/lib.rs").read_text(), "original\n")
+            return response("no-change")
+        with patch("optimizer.run.optimize", side_effect=optimize):
             self.assertEqual(self.run_cli(self.argv + ["--previous-candidate", str(self.previous())]), 0)
-        self.assertEqual((self.output / "workspace/library/src/lib.rs").read_text(), "original\n")
+        report = json.loads((self.output / "report.json").read_text())
+        self.assertEqual(report["starting_point"]["base_candidate_id"], "original")
+        self.assertEqual(len(report["base_checkpoints"]), 2)
+        self.assertEqual((self.output / "base-checkpoints/002/abandoned-library/src/lib.rs").read_text(), "abandoned idea")
+
+    def test_candidate_without_checkpoint_is_rejected(self):
+        with patch("optimizer.run.optimize", return_value=response()):
+            self.assertEqual(self.run_cli(), 1)
+        self.assertIn("trusted base checkpoint", (self.output / "report.md").read_text())
 
     def test_selection_cannot_change_protected_context(self):
         def select(workspace, context, destination, **kwargs):
             (context / "previous/src/lib.rs").chmod(0o644)
             (context / "previous/src/lib.rs").write_text("tampered")
-            return {"choice": "revise", "reason": "Invalid"}
+            self.select(workspace, kwargs, "previous")
+            return response("no-change")
         with patch("optimizer.run.optimize", side_effect=select) as agent:
             self.assertEqual(self.run_cli(self.argv + ["--previous-candidate", str(self.previous())]), 1)
             self.assertEqual(agent.call_count, 1)
         self.assertFalse((self.output / "workspace/library").exists())
-
-    def test_selection_consumes_shared_timeout(self):
-        with patch("optimizer.run.optimize", return_value={"choice": "revise", "reason": "Keep it"}) as agent, \
-                patch("optimizer.run.time.monotonic", side_effect=[0, 1, 601]):
-            self.assertEqual(self.run_cli(self.argv + ["--previous-candidate", str(self.previous())]), 1)
-            self.assertEqual(agent.call_count, 1)
-        self.assertIn("budget exhausted", (self.output / "report.md").read_text())
 
     def test_controller_brief_is_frozen_and_linked_in_report(self):
         task = self.root / "task.json"

@@ -112,6 +112,60 @@ class ContextTests(unittest.TestCase):
         with self.assertRaisesRegex(ContextError, 'hash/size mismatch'):
             self.prepare()
 
+    def test_copies_entire_manifested_workload_and_fixtures_read_only(self):
+        books = {
+            'selected': {'book.toml': '[output.html.search]\nenable=true\n',
+                         'src/SUMMARY.md': '# Summary\n- [Chapter](chapter.md)',
+                         'src/chapter.md': '# Chapter\nWorkload content',
+                         'theme/search.css': 'body { color: black; }'},
+            'nested': {'guide/book.toml': '[book]\nsrc="src"\n',
+                       'guide/src/SUMMARY.md': '# Summary',
+                       'guide/src/chapter.md': '# Another chapter',
+                       'guide-helper/src/main.rs': 'fn main() {}',
+                       'preparation.json': '{"transformations": []}'},
+            'fixture-search-disabled': {'book.toml': '[output.html.search]\nenable=false\n',
+                                        'src/SUMMARY.md': '# Summary',
+                                        'src/errors.md': '# Unusual content\n日本語 & < >'},
+        }
+        manifests = {}
+        for book, files in books.items():
+            root = self.run / 'books' / book
+            for relative, contents in files.items():
+                self.file(root / relative, contents)
+            manifests[book] = {relative: sha256(root / relative) for relative in files}
+        write_json(self.run / 'book-inputs.json', manifests)
+        write_json(self.run / 'books.json', [
+            {'id': 'selected', 'book_root': '.'},
+            {'id': 'nested', 'book_root': 'guide'},
+        ])
+        identity = self.prepare()
+        expected = {f'{book}/{relative}' for book, files in books.items() for relative in files}
+        self.assertEqual(set(inventory(self.destination / 'books')), expected)
+        for book, files in books.items():
+            for relative, contents in files.items():
+                with self.subTest(book=book, file=relative):
+                    path = self.destination / 'books' / book / relative
+                    self.assertEqual(path.read_text(), contents)
+                    self.assertFalse(path.stat().st_mode & 0o222)
+                    self.assertEqual(identity['files'][f'books/{book}/{relative}']['sha256'],
+                                     manifests[book][relative])
+        for name in ('books.json', 'book-inputs.json'):
+            self.assertEqual((self.destination / 'evaluation' / name).read_bytes(),
+                             (self.run / name).read_bytes())
+
+    def test_rejects_missing_or_tampered_manifested_configuration(self):
+        configuration = self.run / 'books/selected/book.toml'
+        self.file(configuration, '[output.html.search]\nenable=true\n')
+        manifest = {'selected': {'book.toml': sha256(configuration)}}
+        write_json(self.run / 'book-inputs.json', manifest)
+        configuration.unlink()
+        with self.assertRaisesRegex(ContextError, 'Missing context input'):
+            self.prepare()
+        self.destination = self.root / 'second-context'
+        self.file(configuration, '[output.html.search]\nenable=false\n')
+        with self.assertRaisesRegex(ContextError, 'hash/size mismatch'):
+            self.prepare()
+
     def test_materializes_internal_book_file_symlinks_with_recorded_hash(self):
         book = self.run / 'books/selected'
         self.file(book / 'LICENSE', 'book license')

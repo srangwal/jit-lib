@@ -137,8 +137,8 @@ python3 optimizer/run.py --baseline .evaluator/runs/<self-check-run-id>
 It defaults to Codex CLI with `gpt-6-sol` and a 10-minute agent limit.
 Both optimizer and auditor also accept `--agent claude` or `--agent opencode`;
 OpenCode requires a locally hosted model. Open the printed
-report to see its explanation and any candidate. Local builds and correctness
-tests are allowed; official evaluation remains a separate command.
+report to see its explanation and any candidate. Local builds, correctness tests, profiling, and diagnostic benchmarks are allowed;
+official evaluation remains a separate command.
 See [optimizer instructions](optimizer/README.md) for outputs and options.
 
 ## Run the complete optimization loop
@@ -152,8 +152,10 @@ python3 controller/run.py --baseline .evaluator/runs/<self-check-run-id>
 The controller allows five optimizer attempts, each with up to ten minutes of
 agent time. It evaluates and audits every submitted candidate, sends the results
 back as feedback, and stops at the first qualifying candidate. Evaluation and
-auditing take additional time. Later attempts explicitly choose to revise the
-previous candidate or restart from the original.
+auditing take additional time. Every attempt receives the complete history and supplied workload. In one
+agent session, it can choose any earlier candidate, combine ideas, or restart
+from the original. Runner checkpoints retain those decisions and parent links.
+New book contents and supported configurations must still work.
 
 Open the printed `.controller/.../report.md` to follow requests, measured
 improvements and uncertainty, audit findings, and decisions. The output includes

@@ -21,8 +21,11 @@ the experiment; it does not retry for more favorable measurements.
 The defaults implement the agreed policy:
 
 - At most **five attempts**, with **ten minutes of agent time per attempt**.
-- On later attempts, the optimizer chooses **revise** or **restart** before
-  editing. Choosing and editing share the ten-minute budget.
+- Every attempt gets the complete history and actual prepared workload.
+  One agent session investigates, chooses any earlier candidate or the original,
+  edits, and runs local diagnostics within the ten-minute budget.
+- Base checkpoints record decisions and contributing candidates before edits.
+  Combining ideas is allowed; application code remains read-only.
 - **Every submitted candidate is audited**, including failed or slower ones.
 - Stop at the **first qualifying candidate**: correctness passes, the lower
   95% confidence bound for aggregate library time reduction meets **20%**, and
@@ -64,7 +67,8 @@ local model server and never falls back to a cloud provider. Each component's
 [coding-agent setup](../coding_agents/README.md).
 
 `--browser`, `--cargo-home`, and `--cache` are optional. No profile is collected
-automatically. Limits accept at most five attempts and 600 optimizer seconds per attempt.
+automatically before optimization; the agent may collect local diagnostic profiles.
+New book contents and supported configurations remain within the correctness contract. Limits accept at most five attempts and 600 optimizer seconds per attempt.
 
 ## Follow what happens
 
@@ -77,7 +81,7 @@ its request, result, and supporting evidence. Component stdout/stderr and
 | --- | --- |
 | `configuration.json`, `source/` | Effective controller settings and captured component source versions. |
 | `inputs/` | Frozen original sources, book inputs, baseline evidence, and optional profile. |
-| `tasks/` | Exactly what each optimizer attempt was asked to improve and its prior feedback. |
+| `tasks/` | Task briefs and complete history bundles: readable tables, candidate snapshots, and hashed supporting evidence. |
 | `steps/<step>/request.json` | Inputs and identities supplied to a component. |
 | `steps/<step>/result.json` | Request linkage, exit status, report hash, and log references. |
 | `steps/<step>/output/` | Native component evidence, candidate files, and agent traces. |
@@ -123,6 +127,7 @@ population-wide guarantee.
 - `loop.py`: attempt policy and stop/refresh decisions.
 - `components.py`: component commands, task briefs, identity checks, and feedback.
 - `feedback.py`: measured improvements, uncertainty, and per-book results.
+- `history.py`: every prior attempt, frozen candidate, supporting evidence, and parent links.
 - `records.py`: immutable records, evidence hashes, and readable timeline.
 - `process.py`: subprocess logs, timeouts, and cancellation.
 

@@ -19,23 +19,52 @@ files are checked again after evaluation/audit and before selection.
 | --- | --- |
 | `experiment_id`, `attempt_id`, `request_id` | Which experiment and request this task belongs to. |
 | `task` | Objective, focus, and independent success rule. |
-| `inputs` | Validated baseline, previous candidate when available, profile, prior feedback. |
+| `inputs` | Validated baseline, complete history reference, profile, and prior feedback. |
 | `workload` | Selected book IDs, pinned manifest, prepared file hashes, execution recipe, measurement configuration and weighting. |
-| `context_paths` | Where the agent finds sources, books, and feedback in its copied context. |
+| `context_paths` | Where the agent finds sources, full prepared books, objective, history, and feedback. |
 | `requirements` | Behavior to preserve and prohibited shortcuts. |
-| `execution` | Time budget, allowed local tests, and network/evaluation restrictions. |
+| `execution` | Time budget, allowed local tests and diagnostic benchmarks, and network/evaluation restrictions. |
 
 `task.library_reduction_target_percent` records the required time reduction.
 `requirements.editable_source` limits source edits to the library. Application
 code stays read-only. These constraints apply to every coding-agent runtime.
 
-The task supplements the fixed optimizer prompt; it cannot relax the sandbox or
-submission checks. Workload contents establish costs, not behavioral guarantees.
+The task supplements the unified optimizer prompt; it cannot relax the sandbox or
+submission checks. The optimizer receives the actual prepared workload files, not
+just book names. It specializes for their usage patterns while preserving the
+application's supported library usage, including new contents and configurations.
+Workload contents alone do not prove a behavioral guarantee.
 
-On later attempts a separate selection response contains `choice` (`revise` or
-`restart`) and `reason`. The optimizer saves `starting-point.json` with source
-hashes before creating its writable library. Its final report binds the task
-IDs/hash, copied inputs, selected base, candidate manifest, and explanation.
+`context/objective.json` records the effective `library_reduction_target_percent`
+and correctness boundary. The controller verifies its hash and target against
+the task. Local measurements are diagnostic; independent evaluation decides
+whether the candidate meets the target.
+
+## Optimizer base requests
+
+Investigation, base selection, and editing happen in one agent session. Before
+editing, the agent atomically writes `workspace/base-request.json`:
+
+```json
+{
+  "request_id": "base-1",
+  "base_candidate_id": "attempt-001",
+  "contributing_candidate_ids": ["attempt-002"],
+  "reason": "Keep the first candidate's representation and adapt the second idea."
+}
+```
+
+The base must be `original` or an available earlier candidate. Contributors name
+additional candidates whose ideas will be reused. The runner validates these IDs,
+saves a protected `optimizer-base-checkpoint/v1` record with source file hashes,
+then creates `workspace/library/`. The agent waits for `base-response.json` with
+the matching `request_id`, `status: ready`, and checkpoint path/hash before editing.
+
+A new request ID can switch bases in the same session. The runner archives the
+abandoned library before replacing it. Reusing an ID with different contents
+fails. `starting-point.json` and the final report identify the last checkpoint;
+`base_checkpoints` links every checkpoint by path and SHA-256. The controller
+checks parentage and source hashes before accepting the submission.
 
 ## Controller to evaluator and auditor
 
@@ -89,17 +118,29 @@ reevaluation are separate steps. Requests, results and earlier feedback are neve
 overwritten. `report.md` is generated from the timeline and can be regenerated
 with `Records.render`; it is not a second source of decision logic.
 
-## Planned history contract
+## Complete history contract
 
-This agreed extension is not yet implemented. Every optimizer request will link
-a complete candidate ledger and a readable table generated from that ledger.
-Each row identifies its candidate, base, contributing parents, proposal, changes,
-correctness, library/application measurements and uncertainty, per-book
-regressions, audit findings, unresolved questions, and evaluator version. Hashed
-artifact references lead to the frozen source, patch, logs, and complete results.
+Every optimizer request links `tasks/<attempt>-history/ledger.json` through
+`inputs.history_ref`. The runner copies the bundle into read-only
+`context/history/`; `summary.md` is the readable table. The ledger uses
+`schema_version: optimizer-history/v1`:
 
-Selection will name the starting candidate (or original), contributing candidate
-IDs, and a reason. The submission will retain these links. References must resolve
-to earlier frozen candidates; missing evidence is explicit. Results under older
-checks remain readable but are marked stale for acceptance. Exact schema changes
-will accompany implementation rather than claiming the current v1 supports them.
+| Field | Contents |
+| --- | --- |
+| `current_evaluator_version` | The checks currently used for acceptance. |
+| `entries` | Every prior attempt, including attempts with no candidate. Each entry records parentage, proposal, changes, optimizer outcome, evaluations, audits, and evidence links. |
+| `candidates` | Candidate ID to frozen library path and source manifest. |
+| `artifacts` | Relative file paths with byte counts and SHA-256 hashes for the bundle, excluding the ledger itself. |
+
+Evaluations retain correctness, library/application measurements and uncertainty,
+per-book regressions, evaluator version and source, and a `stale` flag. Audits
+retain findings and unresolved concerns. Evidence includes patches, proposals,
+prompts, reports, and logs; generated builds and caches are excluded. Missing
+measurements remain explicit. Older results are readable but cannot establish
+acceptance under changed checks.
+
+The optimizer verifies the bundle before copying it. It adds the pinned library
+test lockfile to candidate copies for local builds and records the resulting
+context manifest. The controller checks that manifest against the supplied
+history. The final submission binds task IDs/hash, copied inputs, base
+checkpoints, candidate manifest, and explanation.

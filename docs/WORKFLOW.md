@@ -1,86 +1,67 @@
 # Optimization workflow
 
-## Goal and status
+## Goal
 
-Test whether an AI agent can make an application faster by specializing one of
-its libraries while preserving supported behavior. The optimizer changes the
-candidate, the evaluator measures it, the auditor investigates suspicious
-shortcuts, and the controller coordinates their work.
+Specialize a library for an application's usage and supplied workload while
+preserving behavior for new inputs and supported configurations. The optimizer
+changes the library, the evaluator checks and measures it, the auditor searches
+for invalid shortcuts, and the controller coordinates the experiment.
 
-The first controller implements this workflow for mdBook + elasticlunr-rs.
-See [the command guide](../controller/README.md) to run it.
+## 1. Establish the baseline
 
-## 1. Establish a trustworthy starting point
+Pin the application, original library, workloads, and measurement settings. Run
+a validated original-versus-original self-check. Preserve those inputs and make
+the complete prepared workload available to the optimizer. Supply profiles when
+available; missing profiles remain explicit.
 
-Pin the application, original library, workloads, and evaluator configuration.
-Establish baseline correctness and timing evidence, and obtain profiling evidence
-showing where time is spent. Supply this context to the optimizer. Missing
-profiling evidence must be reported; this design does not imply that an automated
-profile collector already exists. Preserve the original library as the unchanged
-reference.
+## 2. Investigate and choose
 
-**Output:** identified inputs, baseline results, and an explicit attempt budget.
+Give each attempt a concise table of every previous attempt and access to the
+complete supporting evidence. In one continuous session, the optimizer studies
+workload characteristics, application guarantees, costs, and earlier results.
+It may collect local diagnostic profiles and benchmarks.
 
-## 2. Turn an observation into a justified proposal
+It chooses the original or any earlier candidate and may combine compatible
+ideas. A runner checkpoint records the base, contributing candidates, and reason
+before copying the chosen library into the writable workspace.
 
-The [optimizer](OPTIMIZER.md) connects an observed cost to code and identifies an
-application guarantee that could eliminate unnecessary work. It explains why
-supported behavior, including errors and uncommon inputs, should remain intact.
-Patterns found only in the evaluation books are insufficient justification.
+## 3. Implement a specialization
 
-**Output:** one focused, source-backed proposal and its expected benefit.
+The optimizer connects workload characteristics to unnecessary library work and
+implements an appropriate change. Algorithm and data structure redesigns across
+multiple library files are allowed. Application code stays read-only.
 
-## 3. Create a separate candidate
+The supplied books do not define all supported inputs. Application guarantees
+can justify removing work; merely common input patterns need correct handling
+of other inputs. Local correctness tests and diagnostic measurements guide the
+attempt. Another checkpoint records any change of starting point.
 
-Implement the focused change in a separate library copy without changing the
-original reference, application, workloads, or evaluator. Freeze the submitted
-candidate so later measurements and findings refer to those exact files.
-The optimizer may run local builds and correctness tests before submission;
-official performance measurements and acceptance remain external.
+Freeze the submitted library, proposal, patch, parentage, and local evidence.
+Always keep the original library as the independent comparison reference.
 
-**Output:** a candidate and explanation of the implemented change.
+## 4. Evaluate and audit
 
-## 4. Evaluate and learn
+Compare generated outputs and run correctness checks. Measure complete
+application builds and library indexing, serialization, and cleanup. The default
+success target is a 20% reduction in library time, met at the lower end of the
+95% confidence interval. Application timings and per-book regressions remain
+visible but do not block library success.
 
-The [evaluator](../documentation/EVALUATOR.md) checks generated output against the
-original and measures both complete application time and indexing time. A
-successful library improvement must meet the configured time-reduction target
-at the lower end of its 95% confidence interval (default target: 20%). Application
-timing is reported separately and does not block library success.
+Audit every submitted candidate, including failed or slower ones. Reproduced
+violations can add checks. Record the new evaluator version, refresh the
+self-check, and reevaluate before accepting a candidate. Older results remain
+visible and are marked stale when their checks change.
 
-**Output:** correctness results, raw timings, and a verdict: incorrect, correct
-but not clearly faster, or correct and measurably faster. Return the evidence to
-the optimizer for a focused revision when appropriate and within the agreed
-budget. Preserve earlier attempts instead of overwriting their evidence.
+## 5. Learn or finish
 
-## 5. Audit and select
+Return results and findings through the growing history. The next attempt can
+build on any prior candidate rather than only the latest one. No-change attempts
+and unresolved questions remain visible too.
 
-The controller invokes the [auditor](../documentation/AUDITOR.md) for every
-submitted candidate, including candidates that fail correctness or show no
-measurable improvement. The auditor reviews the frozen candidate and evaluation
-evidence. It tests suspicious assumptions. A confirmed
-gap becomes a check that passes the original and fails the offending candidate.
-Rerun the candidate with the strengthened evaluator and record that version.
+The controller permits at most five attempts, each with up to ten minutes of
+agent time. Evaluation and auditing take additional time. Stop at the first
+candidate that passes correctness, meets the library target, and has a completed
+audit reporting no issue found. Otherwise report why no candidate qualified.
 
-**Output:** reproduced findings, unresolved concerns, or no issue found within
-the audit's scope. Return findings as revision feedback when appropriate. At the
-chosen stopping condition, report what the evidence establishes. Unresolved
-concerns must not become a clean audit or an accepted claim of correctness.
-
-The [controller](CONTROLLER.md) manages up to five optimizer
-attempts, each limited to ten minutes, plus evaluation and auditing time. Before
-editing, the optimizer explicitly chooses to revise the previous candidate or
-restart from the original. Stop at the first candidate that passes correctness,
-meets the aggregate library time-reduction target, and has a completed
-audit reporting no issue found. Show individual-book regressions prominently.
-If no candidate qualifies within the budget, report that outcome.
-
-## Agreed next step: carry the full history forward
-
-Each new attempt will receive a concise table of every previous candidate and
-access to all supporting evidence. The optimizer may revise any earlier
-candidate, combine compatible ideas, or restart. Record the starting snapshot,
-contributing candidates, and reason before editing; retain parent links after
-submission. All combinations require their own evaluation and audit. This is
-an approved extension to the current latest-candidate feedback loop; see
-[the history design](CONTROLLER.md#agreed-next-step-complete-candidate-history).
+See the [controller guide](../controller/README.md),
+[optimizer responsibilities](OPTIMIZER.md), and [contracts](../controller/CONTRACTS.md).

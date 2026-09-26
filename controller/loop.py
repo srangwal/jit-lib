@@ -26,7 +26,7 @@ def experiment(records, components, max_attempts=5):
         audit = components.audit(attempt, candidate, evaluation)
         components.check_candidate(candidate)
         after = components.version()
-        feedback = [evaluation["result_ref"], audit["result_ref"]]
+        feedback.extend([evaluation["result_ref"], audit["result_ref"]])
         previous = candidate
         if after != before:
             components.validate_check_change(before, after, audit)

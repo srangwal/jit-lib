@@ -139,7 +139,8 @@ class LoopTests(unittest.TestCase):
             previous_attempt = f"attempt-{number:03d}"
             self.assertEqual(invocation["previous"]["manifest_ref"]["path"], previous_attempt + "/manifest.json")
             self.assertEqual([ref["path"] for ref in invocation["feedback"]],
-                             [previous_attempt + "/evaluation.json", previous_attempt + "/audit.json"])
+                             [f"attempt-{prior:03d}/{kind}.json" for prior in range(1, number + 1)
+                              for kind in ("evaluation", "audit")])
 
     def test_incomplete_evaluation_is_audited_before_stopping(self):
         with self.assertRaisesRegex(RuntimeError, "could not complete"):

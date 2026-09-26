@@ -1,16 +1,18 @@
-"""Freeze optional controller instructions and a previous candidate."""
+"""Freeze the effective objective, controller instructions, and candidate history."""
 
 import json
+import math
 import os
+import re
 from pathlib import Path
 import stat
 
-from evaluator.core import inventory, sha256
+from evaluator.core import inventory, sha256, write_json
 from optimizer.artifacts import copy_files, source_inventory
 from optimizer.context import safe_path
 
 
-def prepare_task_inputs(context, *, task=None, previous_candidate=None):
+def prepare_task_inputs(context, *, task=None, previous_candidate=None, history=None):
     result = {}
     if task is not None:
         task = Path(os.path.abspath(task))
@@ -69,4 +71,71 @@ def prepare_task_inputs(context, *, task=None, previous_candidate=None):
             if path.is_file():
                 path.chmod(path.stat().st_mode & 0o555)
         result["previous"] = {"path": "context/previous", "files": inventory(previous)}
+    if history is not None:
+        result["history"] = prepare_history(context, history)
+    target = None
+    target_source = None
+    for relative in ("task.json", "evaluation/report.json"):
+        path = context / relative
+        if path.exists():
+            value = json.loads(path.read_text())
+            settings = value.get("task" if relative == "task.json" else "configuration", {})
+            if "library_reduction_target_percent" in settings:
+                target = settings["library_reduction_target_percent"]
+                target_source = relative
+                break
+    if target is None:
+        config = Path(__file__).resolve().parents[1] / "evaluator/config.json"
+        target = json.loads(config.read_text())["library_reduction_target_percent"]
+        target_source = "current evaluator/config.json"
+    if isinstance(target, bool) or not isinstance(target, (int, float)) or not math.isfinite(target) or not 0 <= target < 100:
+        raise ValueError("Invalid library time-reduction target")
+    objective = {"library_reduction_target_percent": target, "source": target_source,
+                 "correctness_boundary": "Application library usage, including new contents and supported configurations"}
+    write_json(context / "objective.json", objective)
+    (context / "objective.json").chmod(0o444)
+    result["objective"] = {"path": "context/objective.json", "sha256": sha256(context / "objective.json"), **objective}
     return result
+
+
+def prepare_history(context, history):
+    source = Path(os.path.abspath(history))
+    safe_path(source.parent, source.name)
+    ledger_path = safe_path(source, "ledger.json")
+    if not ledger_path.is_file() or ledger_path.stat().st_nlink != 1:
+        raise ValueError("History ledger must be an independent file")
+    raw = ledger_path.read_bytes()
+    ledger = json.loads(raw)
+    if (not isinstance(ledger, dict) or ledger.get("schema_version") != "optimizer-history/v1"
+            or not isinstance(ledger.get("entries"), list) or not isinstance(ledger.get("candidates"), dict)
+            or not isinstance(ledger.get("artifacts"), dict)):
+        raise ValueError("Unsupported optimizer history schema")
+    actual = source_inventory(source)
+    expected = dict(ledger["artifacts"])
+    if "ledger.json" in expected:
+        raise ValueError("History manifest must not include its ledger")
+    expected["ledger.json"] = {"bytes": len(raw), "sha256": sha256(ledger_path)}
+    if actual != expected or "summary.md" not in actual:
+        raise ValueError("History artifact inventory differs from its manifest")
+    destination = context / "history"
+    copy_files(source, destination, actual)
+    if source_inventory(destination) != actual or source_inventory(source) != actual:
+        raise ValueError("History changed while copying")
+    lock = context / "original/Cargo.lock"
+    for candidate_id, candidate in ledger["candidates"].items():
+        if (not re.fullmatch(r"[A-Za-z0-9_-]+", candidate_id) or candidate_id in {"original", "previous"}
+                or not isinstance(candidate, dict)
+                or candidate.get("path") != f"candidates/{candidate_id}/library"
+                or not isinstance(candidate.get("files"), dict)):
+            raise ValueError("Invalid history candidate")
+        tree = safe_path(destination, candidate["path"])
+        if source_inventory(tree) != candidate["files"] or "Cargo.toml" not in candidate["files"]:
+            raise ValueError("History candidate differs from its source manifest")
+        if "Cargo.lock" in candidate["files"] and sha256(tree / "Cargo.lock") != sha256(lock):
+            raise ValueError("History candidate changed the supplied library test lockfile")
+        (tree / "Cargo.lock").write_bytes(lock.read_bytes())
+    for path in destination.rglob("*"):
+        if path.is_file():
+            path.chmod(path.stat().st_mode & 0o555)
+    return {"path": "context/history", "ledger_sha256": sha256(destination / "ledger.json"),
+            "files": inventory(destination)}

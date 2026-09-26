@@ -98,22 +98,54 @@ Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps(
         self.assertEqual(run.call_args.kwargs["environment"]["CARGO_NET_OFFLINE"], "true")
         self.assertIn(str(self.context), run.call_args.args[4])
 
-    def test_selection_uses_its_own_prompt_and_schema_before_editing(self):
-        (self.contract / "selection.md").write_text("Choose revise or restart without edits.")
-        (self.contract / "selection.schema.json").write_text(json.dumps({
-            "type": "object", "properties": {
-                "choice": {"type": "string", "enum": ["revise", "restart"]},
-                "reason": {"type": "string"}},
-            "required": ["choice", "reason"], "additionalProperties": False,
-        }))
-        result = self.optimize('''import json,sys
+    def test_single_session_services_base_requests_for_codex(self):
+        requests = []
+        def service():
+            request = self.workspace / "base-request.json"
+            if request.exists() and not requests:
+                requests.append(json.loads(request.read_text()))
+                (self.workspace / "base-response.json").write_text('{"status":"ready"}')
+        result = self.optimize('''import json,sys,time
 from pathlib import Path
-assert "Choose revise or restart" in sys.stdin.read()
-assert not Path("library").exists()
-Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps({"choice":"restart","reason":"Prior candidate failed correctness."}))
-''', selection=True)
-        self.assertEqual(result["choice"], "restart")
-        self.assertIn("Choose revise", (self.destination / "prompt.md").read_text())
+Path("base-request.json").write_text('{"request_id":"one"}')
+while not Path("base-response.json").exists():
+    time.sleep(.02)
+assert json.loads(Path("base-response.json").read_text())["status"] == "ready"
+Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps({"status":"candidate","summary":"Changed"}))
+''', checkpoint_handler=service)
+        self.assertEqual(result["status"], "candidate")
+        self.assertEqual(requests, [{"request_id": "one"}])
+
+    def test_external_agent_has_same_checkpoint_monitor(self):
+        observed = []
+        def service():
+            observed.append(True)
+        def run(*args, **kwargs):
+            deadline = time.monotonic() + 2
+            while not observed and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertTrue(observed)
+            return {"status": "candidate", "summary": "Changed"}
+        with patch("optimizer.agent.run_external", side_effect=run):
+            agent.optimize(self.workspace, self.context, self.destination, agent="claude", checkpoint_handler=service)
+
+    def test_full_history_summary_and_effective_target_are_in_actual_prompt(self):
+        (self.context / "history").mkdir()
+        (self.context / "history/summary.md").write_text("candidate-001: indexing +12%, audit unresolved")
+        (self.context / "objective.json").write_text('{"library_reduction_target_percent":35}')
+        with patch("optimizer.agent.run_external", return_value={"status": "unchanged", "summary": "None"}) as run:
+            agent.optimize(self.workspace, self.context, self.destination, agent="claude")
+        rendered = run.call_args.args[4]
+        self.assertIn("candidate-001: indexing +12%, audit unresolved", rendered)
+        self.assertIn('"library_reduction_target_percent":35', rendered)
+        self.assertIn("base-request.json", rendered)
+
+    def test_checkpoint_service_failure_rejects_agent_result(self):
+        def broken():
+            raise ValueError("Invalid checkpoint")
+        with patch("optimizer.agent.run_external", return_value={"status": "candidate", "summary": "Changed"}):
+            with self.assertRaisesRegex(ValueError, "Invalid checkpoint"):
+                agent.optimize(self.workspace, self.context, self.destination, agent="claude", checkpoint_handler=broken)
 
     def test_overlapping_context_or_logs_and_escape_scratch_are_rejected(self):
         for context, destination in ((self.workspace, self.destination),

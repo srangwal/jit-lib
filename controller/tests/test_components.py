@@ -85,15 +85,24 @@ class ComponentTests(unittest.TestCase):
             self.file(candidate / "src/lib.rs", "candidate\n")
             files = inventory(candidate)
             write_json(output / "candidate-files.json", files)
-            choice = {"choice": "restart", "reason": "A new idea", "source": "context/original",
+            choice = {"base_candidate_id": "original", "contributing_candidate_ids": [], "reason": "A new idea", "source": "context/original",
                       "files": inventory(self.library)}
             write_json(output / "starting-point.json", choice)
+            write_json(output / "base-checkpoints/001/checkpoint.json", choice)
             report = {"status": "candidate-created", "starting_point": choice,
+                      "base_checkpoints": [{"path": "base-checkpoints/001/checkpoint.json", "sha256": sha256(output / "base-checkpoints/001/checkpoint.json")}],
                       "input_identity": {"baseline_report_sha256": sha256(Path(argv[argv.index("--baseline") + 1]) / "report.json"),
                                          "files": load(self.experiment / task["inputs"]["baseline_ref"]["path"])["files"]},
                       "controller_inputs": {"task": {**{key: task[key] for key in (
                           "experiment_id", "attempt_id", "request_id")}, "sha256": sha256(task_path)}},
                       "candidate": {"sha256": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()}}
+            write_json(output / "context/objective.json", {"library_reduction_target_percent": task["task"]["library_reduction_target_percent"]})
+            report["controller_inputs"]["objective"] = {"path": "context/objective.json", "sha256": sha256(output / "context/objective.json"), "library_reduction_target_percent": task["task"]["library_reduction_target_percent"]}
+            history = Path(argv[argv.index("--history") + 1])
+            copied_files = inventory(history)
+            for candidate_id in load(history / "ledger.json")["candidates"]:
+                copied_files[f"candidates/{candidate_id}/library/Cargo.lock"] = inventory(self.library)["Cargo.lock"]
+            report["controller_inputs"]["history"] = {"ledger_sha256": sha256(history / "ledger.json"), "files": copied_files}
             if "--previous-candidate" in argv:
                 previous = Path(argv[argv.index("--previous-candidate") + 1])
                 previous_files = {**inventory(previous), "Cargo.lock": inventory(self.library)["Cargo.lock"]}
@@ -201,6 +210,78 @@ class ComponentTests(unittest.TestCase):
         self.assertEqual(feedback[0]["contents"]["performance"]["aggregate"]["indexing"]["speedup_ratio"], 1.25)
         self.assertEqual(feedback[1]["contents"]["report"]["findings"][0]["claim"], "Investigate uncommon inputs")
         self.assertIsNotNone(load(self.experiment / "tasks/attempt-002.json")["inputs"]["previous_candidate_ref"])
+
+    def test_third_attempt_can_choose_first_and_retain_complete_evidence(self):
+        def mutate(component, report):
+            count = self.calls.count("optimizer")
+            if component == "optimizer":
+                report["response"] = {"summary": f"Proposal {count}"}
+                output = self.experiment / f"steps/attempt-{count:03d}-optimize/output"
+                self.file(output / "workspace/diagnostics/profile.json", '{"cost": 42}')
+                self.file(output / "workspace/target/unwanted", "build binary")
+                if count == 3:
+                    source = self.components.candidates["attempt-001"]
+                    choice = {"base_candidate_id": "attempt-001", "contributing_candidate_ids": ["attempt-002"],
+                              "reason": "Retain first implementation and combine the second idea",
+                              "source": "context/history/candidates/attempt-001/library",
+                              "files": {**source["manifest"], "Cargo.lock": inventory(self.library)["Cargo.lock"]}}
+                    report["starting_point"] = choice
+                    write_json(output / "starting-point.json", choice)
+                    write_json(output / "base-checkpoints/001/checkpoint.json", choice)
+                    report["base_checkpoints"][0]["sha256"] = sha256(output / "base-checkpoints/001/checkpoint.json")
+            if component == "auditor" and count < 3:
+                report.update(status="unresolved", unresolved=["needs more evidence"])
+        self.change_report = mutate
+        result = experiment(self.records, self.components)
+        self.assertEqual(result["attempts"], 3)
+        bundle = self.experiment / "tasks/attempt-003-history"
+        ledger = load(bundle / "ledger.json")
+        self.assertEqual(list(ledger["candidates"]), ["attempt-001", "attempt-002"])
+        self.assertEqual([item["summary"] for item in ledger["entries"]], ["Proposal 1", "Proposal 2"])
+        self.assertEqual(len(load(self.experiment / "tasks/attempt-003-feedback.json")["evidence"]), 4)
+        self.assertTrue((bundle / "evidence/steps/attempt-001-optimize/output/workspace/diagnostics/profile.json").is_file())
+        self.assertFalse(any("unwanted" in name for name in ledger["artifacts"]))
+        self.assertTrue(any("checks/" in name and name.endswith("source/core.py") for name in ledger["artifacts"]))
+        for name, expected in ledger["artifacts"].items():
+            self.assertEqual(sha256(bundle / name), expected["sha256"])
+        last = self.components.attempts[-1]["starting_point"]
+        self.assertEqual(last["base_candidate_id"], "attempt-001")
+        self.assertEqual(last["contributing_candidate_ids"], ["attempt-002"])
+
+    def test_history_identity_tampering_is_rejected(self):
+        def mutate(component, report):
+            if component == "optimizer":
+                report["controller_inputs"]["history"]["ledger_sha256"] = "wrong"
+        self.change_report = mutate
+        with self.assertRaisesRegex(ValueError, "different history"):
+            experiment(self.records, self.components)
+
+    def test_missing_or_tampered_checkpoint_is_rejected(self):
+        for bad in ([], [{"path": "base-checkpoints/001/checkpoint.json", "sha256": "wrong"}]):
+            with self.subTest(checkpoints=bad):
+                self.setUp()
+                def mutate(component, report):
+                    if component == "optimizer":
+                        report["base_checkpoints"] = bad
+                self.change_report = mutate
+                with self.assertRaisesRegex(ValueError, "checkpoint"):
+                    experiment(self.records, self.components)
+
+    def test_copied_objective_must_match_the_controller_target(self):
+        def mutate(component, report):
+            if component == "optimizer":
+                report["controller_inputs"]["objective"]["library_reduction_target_percent"] = 50
+        self.change_report = mutate
+        with self.assertRaisesRegex(ValueError, "different optimization objective"):
+            experiment(self.records, self.components)
+
+    def test_unknown_contributing_candidate_is_rejected(self):
+        def mutate(component, report):
+            if component == "optimizer":
+                report["starting_point"]["contributing_candidate_ids"] = ["not-a-candidate"]
+        self.change_report = mutate
+        with self.assertRaisesRegex(ValueError, "parentage"):
+            experiment(self.records, self.components)
 
     def test_wrong_starting_source_is_rejected(self):
         def mutate(component, report):

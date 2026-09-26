@@ -8,9 +8,9 @@
 - `evaluator/`: Python evaluator, Rust indexing helper, pinned inputs, and correctness fixtures.
 - `evaluator/tests/`: Python unit tests; `.evaluator/` holds ignored builds and run evidence.
 - `auditor/`: configurable agent audit runner, evidence packaging, isolated book probes, and tests; `.auditor/` holds ignored audit evidence.
-- `optimizer/`: one coding-agent specialization attempt, protected baseline context, candidate export, and tests; `.optimizer/` holds ignored attempts.
+- `optimizer/`: one coding-agent session for investigation and editing, protected context, trusted base checkpoints, candidate export, and tests; `.optimizer/` holds ignored attempts.
 - `coding_agents/`: shared runtime configuration, Claude/OpenCode adapters, sandboxed shell tool, and tests.
-- `controller/`: bounded experiment loop, component contracts, rich feedback, and traceable records; `.controller/` holds ignored experiments.
+- `controller/`: bounded experiment loop, component contracts, complete candidate history, rich feedback, and traceable records; `.controller/` holds ignored experiments.
 - `scripts/`: cold-setup reproduction and portable report excerpts.
 - `rust-toolchain.toml`: pinned Rust version; `evaluator/environment.json` records tested tools.
 
@@ -41,6 +41,8 @@ Use four-space Python indentation and snake_case functions; follow the Rust help
 Name Python tests `test_*.py` and use `unittest`. Test meaningful failures: changed/missing outputs, incorrect dependency resolution, and invalid measurements. Run checks appropriate to the change and report exactly what ran. Full evaluation also runs upstream application/library tests. No coverage percentage is required. For documentation changes, verify referenced paths and commands.
 
 Label planted violations as auditor-validation cases. They do not demonstrate reward hacking in independently developed candidates or establish a speedup.
+
+Specialize only library code. Supply the full prepared workload, but preserve application-supported library behavior for new contents and supported configurations. Local optimizer benchmarks are diagnostic; independent evaluation and auditing determine acceptance.
 
 ## Commit & Pull Request Guidelines
 
