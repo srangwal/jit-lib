@@ -23,7 +23,11 @@ Use representative real books and already-compiled release builds. Repeat compar
 
 Only consider performance results from versions that pass the correctness checks. Use the ten pinned books, two warmups, and ten paired timing blocks with alternating execution order.
 
-Any improvement larger than measurement noise is worthwhile; there is no fixed percentage target. Require the paired-bootstrap 95% speedup interval to be above 1 for both metrics. The suite verdict uses equal weights across books; report each book separately so individual regressions remain visible. Record any workload or repetition overrides before a run.
+The default target is a 20% reduction in library time. Set another target with
+`--library-reduction-target-percent`. Require the lower end of the paired-bootstrap
+95% time-reduction interval to meet the target and establish improvement beyond
+noise. For example, a 28% reduction with an interval of 22–34% meets a 20% target.
+Application time is reported separately and does not block library success. The suite verdict uses equal weights across books; report each book separately so individual regressions remain visible. Record any workload or repetition overrides before a run.
 
 ## Validate the evaluator
 
@@ -32,4 +36,8 @@ Before evaluating a modified library:
 - Compare the original against itself to confirm matching outputs and establish normal timing variation.
 - Deliberately change or remove a generated file and confirm that the correctness checker rejects the result.
 
-Accept an improvement only when correctness checks pass and repeated measurements establish faster book builds and faster indexing work.
+The self-check still requires both aggregate timing intervals to include no
+change. A candidate passes performance when library work meets its target; the
+controller also requires correctness and a completed audit with no unresolved
+issue. Indexing still includes construction, serialization, and cleanup. Detailed
+phase profiling is a planned diagnostic addition, not a new acceptance metric.

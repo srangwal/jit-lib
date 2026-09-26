@@ -24,9 +24,18 @@ The defaults implement the agreed policy:
 - On later attempts, the optimizer chooses **revise** or **restart** before
   editing. Choosing and editing share the ten-minute budget.
 - **Every submitted candidate is audited**, including failed or slower ones.
-- Stop at the **first qualifying candidate**: correctness passes, both aggregate
-  timing improvements exceed noise, and the audit reports no issue found.
+- Stop at the **first qualifying candidate**: correctness passes, the lower
+  95% confidence bound for aggregate library time reduction meets **20%**, and
+  the audit reports no issue found. Application time does not block success.
 - Show individual-book regressions even when the aggregate improves.
+
+Override the target before starting with `--library-reduction-target-percent 30`.
+Targets are percentages of time saved: 100 ms to 70 ms is a 30% reduction.
+The target must be at least 0 and less than 100; at 0, improvement must still
+exceed noise. The indexing timer includes construction, serialization, and
+cleanup. Both aggregate application timings and per-book regressions stay visible.
+Changing the target requires a new experiment; earlier evidence is never relabeled.
+The optimizer changes library code only; application code remains protected.
 
 Preparation, evaluation, and auditing take additional time. The default complete
 evaluator command limit is two hours; the complete auditor limit is one hour.

@@ -71,10 +71,21 @@ replays actual mdBook inputs with the same callbacks. Trace reading and writing
 the final output file are excluded; file-writing costs remain in book-build
 time. See `index-replay/README.md` for the exact boundary.
 
-A worthwhile improvement is **any improvement larger than measurement noise**.
-We estimate noise with a paired bootstrap over timing blocks: both metrics'
-95% speedup intervals must lie entirely above 1. No fixed percentage is required.
-Otherwise the verdict is inconclusive, or slower when an interval lies below 1.
+The performance success criterion is **library time reduction**, with a default
+target of **20%**. For example, 100 ms to 80 ms is a 20% reduction. Use
+`--library-reduction-target-percent 30` to set a different target before running.
+Targets must be finite, at least zero, and below 100.
+
+We estimate noise with a paired bootstrap over timing blocks. The lower end of
+the library's 95% time-reduction interval must meet the target and exceed zero.
+A 28% reduction with an interval of 22–34% therefore meets a 20% target.
+A zero target still requires an improvement beyond measurement noise.
+An improvement below the target is inconclusive; a confidently slower library
+is reported as slower. The report records the target and interval.
+
+Application performance is reported separately and does not block library
+success, even when it regresses. Correctness must still pass. Final acceptance
+by the controller also requires an audit with no unresolved issue.
 
 The suite verdict uses equal-weight geometric mean speedups across books.
 Per-book results remain visible, including regressions; an aggregate improvement

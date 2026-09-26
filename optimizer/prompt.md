@@ -30,6 +30,7 @@ uncommon inputs. Keep fallback behavior where the application can vary.
 
 ## Editing and testing
 
+Change library code only. Do not edit, replace, or submit application code.
 Only `library/` is submitted as the candidate. Use the other writable workspace
 directories for build output, temporary files, and experimental tests. The
 application, original library, books, evaluation evidence, and optimizer code

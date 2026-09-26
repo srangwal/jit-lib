@@ -25,6 +25,10 @@ files are checked again after evaluation/audit and before selection.
 | `requirements` | Behavior to preserve and prohibited shortcuts. |
 | `execution` | Time budget, allowed local tests, and network/evaluation restrictions. |
 
+`task.library_reduction_target_percent` records the required time reduction.
+`requirements.editable_source` limits source edits to the library. Application
+code stays read-only. These constraints apply to every coding-agent runtime.
+
 The task supplements the fixed optimizer prompt; it cannot relax the sandbox or
 submission checks. Workload contents establish costs, not behavioral guarantees.
 
@@ -57,6 +61,9 @@ correctness failure, and a completed auditor can report a confirmed violation.
   interval, percentage time reduction, asymmetric uncertainty offsets, verdict,
   reason code, and plain-language explanation.
 - `performance.regressions`, including uncertain slowdown point estimates.
+- `performance.qualification`: recorded target, lower 95% reduction bound,
+  whether the target is met, and an explanation. A statistically significant
+  gain below the target does not qualify. Application timing does not veto it.
 - Measurement configuration, timer boundaries, weighting and statistical scope.
 - Hashed raw evidence, output mismatches, and failed-command log excerpts.
 
@@ -81,3 +88,18 @@ versions and marks earlier results stale for selection. The new self-check and
 reevaluation are separate steps. Requests, results and earlier feedback are never
 overwritten. `report.md` is generated from the timeline and can be regenerated
 with `Records.render`; it is not a second source of decision logic.
+
+## Planned history contract
+
+This agreed extension is not yet implemented. Every optimizer request will link
+a complete candidate ledger and a readable table generated from that ledger.
+Each row identifies its candidate, base, contributing parents, proposal, changes,
+correctness, library/application measurements and uncertainty, per-book
+regressions, audit findings, unresolved questions, and evaluator version. Hashed
+artifact references lead to the frozen source, patch, logs, and complete results.
+
+Selection will name the starting candidate (or original), contributing candidate
+IDs, and a reason. The submission will retain these links. References must resolve
+to earlier frozen candidates; missing evidence is explicit. Results under older
+checks remain readable but are marked stale for acceptance. Exact schema changes
+will accompany implementation rather than claiming the current v1 supports them.

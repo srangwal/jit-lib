@@ -14,7 +14,7 @@ from controller.components import Components, EXIT_CODES, REPO
 from controller.loop import experiment
 from controller.records import Records, load
 from controller.tests.test_feedback import metric
-from evaluator.core import inventory, sha256, write_json
+from evaluator.core import inventory, sha256, write_json, library_qualification
 
 
 class ComponentTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class ComponentTests(unittest.TestCase):
         self.records = Records(self.experiment)
         self.args = SimpleNamespace(baseline=self.root / "baseline", profile=None, cache=self.root / "cache",
                                     browser=None, cargo_home=None, model="gpt-6-sol", optimizer_timeout=600,
-                                    evaluation_timeout=7200, audit_timeout=3600)
+                                    evaluation_timeout=7200, audit_timeout=3600, library_reduction_target_percent=20)
         self.components = Components(self.records, self.args, runner=self.runner)
         self.components.books = [{"id": "book-one", "revision": "pinned"}]
         self.calls = []
@@ -50,7 +50,7 @@ class ComponentTests(unittest.TestCase):
         path.write_text(contents)
 
     def report(self, mode="run", status="improved"):
-        metrics = {key: metric(1, (.98, 1.02)) if mode == "self-check" else metric()
+        metrics = {key: metric(1, (.98, 1.02)) if mode == "self-check" else metric(1.25, (1.25, 1.3))
                    for key in ("application", "index")}
         return {"mode": mode, "status": status, "configuration": deepcopy(self.config),
                 "evaluator_version": self.components.version(),
@@ -58,7 +58,8 @@ class ComponentTests(unittest.TestCase):
                 "correctness": {"book-one": {"files": 1, "repeat_identical": True,
                     "candidate_identical": True, "capture_identical": True, "index_replay_identical": True}},
                 "analysis": {"books": {"book-one": deepcopy(metrics)}, "aggregate": metrics,
-                             "verdict": "inconclusive" if mode == "self-check" else "improved"}}
+                             "verdict": "inconclusive" if mode == "self-check" else "improved",
+                             "performance_policy": library_qualification(metrics["index"], self.config["library_reduction_target_percent"])}}
 
     def evaluation_files(self, directory, report, candidate):
         for name, value in {"report.json": report, "books.json": self.components.books,
@@ -98,6 +99,9 @@ class ComponentTests(unittest.TestCase):
                 previous_files = {**inventory(previous), "Cargo.lock": inventory(self.library)["Cargo.lock"]}
                 report["controller_inputs"]["previous"] = {"files": previous_files}
         elif component == "evaluator":
+            self.assertEqual(float(argv[argv.index("--library-reduction-target-percent") + 1]),
+                             self.args.library_reduction_target_percent)
+            self.config["library_reduction_target_percent"] = self.args.library_reduction_target_percent
             if "self-check" in argv:
                 shutil.copytree(self.args.baseline, output, dirs_exist_ok=True)
                 report = self.report("self-check", "validated")
@@ -125,6 +129,36 @@ class ComponentTests(unittest.TestCase):
         self.records.verify()
         self.records.render("qualified")
         self.assertIn("20.00%", (self.experiment / "report.md").read_text())
+
+    def test_application_slowdown_does_not_block_library_success(self):
+        def mutate(component, report):
+            if component == "evaluator":
+                report["analysis"]["aggregate"]["application"] = metric(.9, (.85, .95))
+                report["analysis"]["books"]["book-one"]["application"] = metric(.9, (.85, .95))
+        self.change_report = mutate
+        result = experiment(self.records, self.components)
+        self.assertEqual(result["status"], "qualified")
+        feedback = load(self.experiment / result["evaluation"]["path"])
+        self.assertEqual(feedback["performance"]["regressions"][0]["metric"], "application_build")
+        task = load(self.experiment / "tasks/attempt-001.json")
+        self.assertEqual(task["task"]["library_reduction_target_percent"], 20)
+        self.assertIn("application code is read-only", task["requirements"]["editable_source"])
+
+    def test_legacy_baseline_refreshes_without_relabeling_saved_evidence(self):
+        del self.baseline_report["configuration"]["library_reduction_target_percent"]
+        del self.baseline_report["analysis"]["performance_policy"]
+        write_json(self.args.baseline / "report.json", self.baseline_report)
+        result = experiment(self.records, self.components)
+        self.assertEqual(result["status"], "qualified")
+        self.assertEqual(self.calls, ["evaluator", "optimizer", "evaluator", "auditor"])
+        self.assertNotIn("library_reduction_target_percent", load(self.args.baseline / "report.json")["configuration"])
+
+    def test_target_override_is_forwarded_after_refresh(self):
+        self.args.library_reduction_target_percent = 10
+        result = experiment(self.records, self.components)
+        self.assertEqual(result["status"], "qualified")
+        self.assertEqual(self.calls[0], "evaluator")
+        self.assertEqual(load(self.experiment / "tasks/attempt-001.json")["task"]["library_reduction_target_percent"], 10)
 
     def test_stale_baseline_refreshes_before_optimizer_with_same_inputs(self):
         self.baseline_report["evaluator_version"]["sha256"] = "old-version"

@@ -199,11 +199,36 @@ def paired_summary(pairs, resamples=10000, seed=20260924):
         "candidate_median_seconds": statistics.median(p[1] for p in pairs),
         "speedup": math.exp(statistics.fmean(logs)),
         "confidence_interval_95": [lo, hi],
+        "time_reduction_percent": 100 - 100 / math.exp(statistics.fmean(logs)),
+        "time_reduction_confidence_interval_95": [100 - 100 / lo, 100 - 100 / hi],
         "verdict": "improved" if lo > 1 else "slower" if hi < 1 else "inconclusive",
     }
 
 
-def analyse(samples, book_ids, repetitions, resamples, seed):
+def validate_library_reduction_target(value):
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value < 100:
+        raise EvaluationError("library reduction target must be finite and in [0, 100) percent")
+    return float(value)
+
+
+def library_qualification(index_metric, target):
+    """Qualify library work; application results remain separate observations."""
+    target = validate_library_reduction_target(target)
+    lo, hi = index_metric["confidence_interval_95"]
+    # Compare ratios to avoid cancellation rounding at exact percentage targets.
+    meets_target = lo > 1 and lo >= 1 / (1 - target / 100)
+    return {
+        "criterion": "library-time-reduction/v1",
+        "library_reduction_target_percent": target,
+        "time_reduction_percent": 100 - 100 / index_metric["speedup"],
+        "time_reduction_confidence_interval_95": [100 - 100 / lo, 100 - 100 / hi],
+        "meets_target": meets_target,
+        "verdict": "improved" if meets_target else "slower" if hi < 1 else "inconclusive",
+    }
+
+
+def analyse(samples, book_ids, repetitions, resamples, seed, library_reduction_target_percent=20):
+    validate_library_reduction_target(library_reduction_target_percent)
     by_key = {}
     for sample in samples:
         key = (sample["book"], sample["metric"], sample["block"], sample["variant"])
@@ -227,9 +252,9 @@ def analyse(samples, book_ids, repetitions, resamples, seed):
                                                            for pairs in all_pairs))
                                  for v in (0, 1)) for block in range(repetitions)]
         result["aggregate"][metric] = paired_summary(aggregate_pairs, resamples, seed)
-    result["verdict"] = ("improved" if all(r["verdict"] == "improved" for r in result["aggregate"].values())
-                         else "slower" if any(r["verdict"] == "slower" for r in result["aggregate"].values())
-                         else "inconclusive")
+    result["performance_policy"] = library_qualification(
+        result["aggregate"]["index"], library_reduction_target_percent)
+    result["verdict"] = result["performance_policy"]["verdict"]
     return result
 
 
@@ -241,6 +266,18 @@ def markdown_report(report):
     if "calibration" in report:
         lines += [report["calibration"], ""]
     if "analysis" in report:
+        policy = report["analysis"].get("performance_policy")
+        if policy and report.get("mode") != "self-check":
+            lo, hi = policy["time_reduction_confidence_interval_95"]
+            lines += [
+                f"Library time-reduction target: **{policy['library_reduction_target_percent']:g}%**. "
+                "The lower 95% confidence bound must meet this target and exceed measurement noise.", "",
+                f"Measured library time reduction: **{policy['time_reduction_percent']:.2f}%** "
+                f"(95% interval: {lo:.2f}–{hi:.2f}%). "
+                f"Target met: **{'yes' if policy['meets_target'] else 'no'}**.", "",
+                "Application performance is reported separately and does not block library success. "
+                "Final acceptance also requires correctness and an audit with no unresolved issue.", "",
+            ]
         lines += ["Speedup is original time / candidate time. Values above 1 favor the candidate.", "",
                   "| Book | Book-build speedup (95% interval) | Index speedup (95% interval) |",
                   "| --- | --- | --- |"]

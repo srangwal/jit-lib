@@ -6,5 +6,5 @@ The intended result is a replacement library that:
 
 - Works through the application’s existing interface.
 - Preserves all supported behavior, including errors and uncommon inputs.
-- Makes both the library work and the complete application measurably faster.
+- Reduces library work time by the configured target, while reporting complete application time separately.
 - Comes with tests and instructions that let someone independently verify the improvement.

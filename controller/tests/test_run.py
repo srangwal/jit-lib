@@ -23,7 +23,10 @@ class RunTests(unittest.TestCase):
 
     def test_limits_are_checked_before_work(self):
         for args in (["--attempts", "6"], ["--optimizer-timeout", "601"],
-                     ["--audit-timeout", "nan"], ["--evaluation-timeout", "0"]):
+                     ["--audit-timeout", "nan"], ["--evaluation-timeout", "0"],
+                     ["--library-reduction-target-percent", "nan"],
+                     ["--library-reduction-target-percent", "100"],
+                     ["--library-reduction-target-percent", "-1"]):
             with self.assertRaises(SystemExit):
                 self.run_cli(args)
             self.assertFalse(self.output.exists())
@@ -59,6 +62,8 @@ class RunTests(unittest.TestCase):
                                                       "local_base_url": "http://127.0.0.1:11434/v1"})
         self.assertEqual(config["auditor_runtime"], {"agent": "claude", "model": "explicit-claude-model", "local_base_url": None})
         self.assertIn("coding_agents", config["code_versions"])
+        self.assertEqual(config["policy"]["library_reduction_target_percent"], 20)
+        self.assertFalse(config["policy"]["application_performance_blocks_success"])
 
     def test_local_endpoint_is_not_accepted_for_cloud_agents(self):
         with self.assertRaises(SystemExit):

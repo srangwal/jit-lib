@@ -15,7 +15,8 @@ import tomllib
 from builds import prepare_variants, registry_packages, run_suites, setup_gui
 from capture_index import prepare_replay
 from core import (Commands, CorrectnessError, EvaluationError, analyse, compare,
-                  evaluator_fingerprint, inventory, markdown_report, record_progress, sha256, write_json)
+                  evaluator_fingerprint, inventory, markdown_report, record_progress, sha256,
+                  validate_library_reduction_target, write_json)
 from prepare_books import prepare_book
 from environment import build_environment, runtime_info
 
@@ -217,7 +218,8 @@ def execute(args, run, report, commands, env):
         if sha256(variants[name]["binary"]) != report["variants"][name]["binary_sha256"]:
             raise CorrectnessError(f"Application binary changed during evaluation: {name}")
     report["analysis"] = analyse(samples, book_ids, config["repetitions"],
-                                  config["bootstrap_resamples"], config["bootstrap_seed"])
+                                  config["bootstrap_resamples"], config["bootstrap_seed"],
+                                  config["library_reduction_target_percent"])
     if args.mode == "self-check":
         report["status"] = ("validated" if all(metric["verdict"] == "inconclusive"
                                              for metric in report["analysis"]["aggregate"].values())
@@ -242,14 +244,21 @@ def main():
     parser.add_argument("--browser", type=Path, help="installed Chrome/Chromium executable")
     parser.add_argument("--repetitions", type=int)
     parser.add_argument("--warmups", type=int)
+    parser.add_argument("--library-reduction-target-percent", type=float,
+                        help="minimum lower 95%% confidence bound for library time reduction (default: config.json)")
     args = parser.parse_args()
     if (args.mode == "run") != (args.candidate is not None):
         parser.error("run requires --candidate; self-check compares original against original")
     config = json.loads((HERE / "config.json").read_text())
-    for field in ("repetitions", "warmups"):
+    for field in ("repetitions", "warmups", "library_reduction_target_percent"):
         value = getattr(args, field)
         if value is not None:
             config[field] = value
+    try:
+        config["library_reduction_target_percent"] = validate_library_reduction_target(
+            config["library_reduction_target_percent"])
+    except EvaluationError as error:
+        parser.error(str(error))
     if config["repetitions"] < 3 or config["warmups"] < 0:
         parser.error("require at least 3 repetitions and a nonnegative warmup count")
     if args.books:

@@ -44,7 +44,9 @@ official performance measurements and acceptance remain external.
 
 The [evaluator](../documentation/EVALUATOR.md) checks generated output against the
 original and measures both complete application time and indexing time. A
-worthwhile improvement must exceed measurement noise in both metrics.
+successful library improvement must meet the configured time-reduction target
+at the lower end of its 95% confidence interval (default target: 20%). Application
+timing is reported separately and does not block library success.
 
 **Output:** correctness results, raw timings, and a verdict: incorrect, correct
 but not clearly faster, or correct and measurably faster. Return the evidence to
@@ -69,6 +71,16 @@ The [controller](CONTROLLER.md) manages up to five optimizer
 attempts, each limited to ten minutes, plus evaluation and auditing time. Before
 editing, the optimizer explicitly chooses to revise the previous candidate or
 restart from the original. Stop at the first candidate that passes correctness,
-improves both aggregate performance metrics beyond noise, and has a completed
+meets the aggregate library time-reduction target, and has a completed
 audit reporting no issue found. Show individual-book regressions prominently.
 If no candidate qualifies within the budget, report that outcome.
+
+## Agreed next step: carry the full history forward
+
+Each new attempt will receive a concise table of every previous candidate and
+access to all supporting evidence. The optimizer may revise any earlier
+candidate, combine compatible ideas, or restart. Record the starting snapshot,
+contributing candidates, and reason before editing; retain parent links after
+submission. All combinations require their own evaluation and audit. This is
+an approved extension to the current latest-candidate feedback loop; see
+[the history design](CONTROLLER.md#agreed-next-step-complete-candidate-history).

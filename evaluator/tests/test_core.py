@@ -8,7 +8,8 @@ import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from core import Commands, CorrectnessError, EvaluationError, analyse, compare, inventory, paired_summary
+from core import (Commands, CorrectnessError, EvaluationError, analyse, compare, inventory,
+                  library_qualification, markdown_report, paired_summary)
 
 
 class OutputComparisonTests(unittest.TestCase):
@@ -149,13 +150,57 @@ class StatisticsTests(unittest.TestCase):
         with self.assertRaisesRegex(EvaluationError, "Duplicate timing"):
             analyse(samples + [samples[0]], ["small", "large"], 3, 200, 1)
 
-    def test_both_metrics_must_improve(self):
-        result = analyse(samples_for(), ["small", "large"], 3, 200, 1)
-        self.assertEqual(result["verdict"], "improved")
+    def test_library_target_qualifies_despite_application_regression(self):
+        for application_ratio in (2, 1, 0.5):
+            result = analyse(samples_for(application_ratio=application_ratio),
+                             ["small", "large"], 3, 200, 1, 20)
+            self.assertEqual(result["verdict"], "improved")
+            self.assertTrue(result["performance_policy"]["meets_target"])
+        self.assertEqual(result["aggregate"]["application"]["verdict"], "slower")
         result = analyse(samples_for(index_ratio=0.5), ["small", "large"], 3, 200, 1)
         self.assertEqual(result["aggregate"]["application"]["verdict"], "improved")
         self.assertEqual(result["aggregate"]["index"]["verdict"], "slower")
         self.assertEqual(result["verdict"], "slower")
+
+    def test_confidence_lower_bound_must_meet_target_not_point_estimate(self):
+        result = library_qualification({"speedup": 1 / .72,
+                                        "confidence_interval_95": [1 / .78, 1 / .66]}, 20)
+        self.assertTrue(result["meets_target"])
+        self.assertAlmostEqual(result["time_reduction_percent"], 28)
+        for actual, expected in zip(result["time_reduction_confidence_interval_95"], [22, 34]):
+            self.assertAlmostEqual(actual, expected)
+        result = library_qualification({"speedup": 1 / .72,
+                                        "confidence_interval_95": [1 / .82, 1 / .66]}, 20)
+        self.assertFalse(result["meets_target"])
+        self.assertEqual(result["verdict"], "inconclusive")
+
+    def test_exact_target_boundary_and_zero_target_noise_guard(self):
+        for target, lo, expected in ((20, 1.25, True), (20, math.nextafter(1.25, 0), False),
+                                     (0, 1, False), (0, math.nextafter(1, 2), True)):
+            with self.subTest(target=target, lo=lo):
+                result = library_qualification({"speedup": 1.5,
+                                                "confidence_interval_95": [lo, 2]}, target)
+                self.assertEqual(result["meets_target"], expected)
+
+    def test_significant_library_gain_below_target_is_not_success(self):
+        result = analyse(samples_for(index_ratio=1.1), ["small", "large"], 3, 200, 1, 20)
+        self.assertEqual(result["aggregate"]["index"]["verdict"], "improved")
+        self.assertEqual(result["verdict"], "inconclusive")
+        self.assertFalse(result["performance_policy"]["meets_target"])
+
+    def test_invalid_targets_are_rejected(self):
+        for target in (-1, 100, 101, math.nan, math.inf, -math.inf, True, "20", None):
+            with self.subTest(target=target), self.assertRaisesRegex(EvaluationError, "target"):
+                analyse(samples_for(), ["small", "large"], 3, 200, 1, target)
+
+    def test_report_explains_target_and_separate_application_result(self):
+        result = analyse(samples_for(application_ratio=.5), ["small", "large"], 3, 200, 1, 20)
+        report = markdown_report({"status": "improved", "mode": "run", "run": "example",
+                                  "analysis": result})
+        self.assertIn("target: **20%**", report)
+        self.assertIn("**50.00%**", report)
+        self.assertIn("does not block library success", report)
+        self.assertIn("slower", report)
 
     def test_equal_book_weight_keeps_individual_regression_visible(self):
         samples = samples_for()

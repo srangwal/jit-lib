@@ -8,7 +8,7 @@ The intended result is a replacement library that:
 
 - Works through the application’s existing interface.
 - Preserves all supported behavior, including errors and uncommon inputs.
-- Makes both the library work and the complete application measurably faster.
+- Reduces library work time by the configured target, while reporting complete application time separately.
 - Comes with tests and instructions that let someone independently verify the improvement.
 
 ## Start here (macOS)
@@ -107,7 +107,10 @@ python3 evaluator/run.py run --candidate .evaluator/candidates/elasticlunr-rs
 ```
 
 An unchanged candidate is also a useful first trial. A real improvement must
-pass correctness and exceed measurement noise in both book-building and indexing.
+pass correctness and meet the library time-reduction target at the lower end of
+the 95% confidence interval. The default target is 20%; application timing is
+reported separately and does not block library success. A controller result also
+requires a completed audit with no unresolved issue.
 See [evaluator details](evaluator/README.md) for verdicts and timing boundaries.
 
 ### 6. Audit the result

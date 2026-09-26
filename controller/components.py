@@ -137,15 +137,19 @@ class Components:
 
     def initialize(self):
         baseline = self.baseline_context(self.args.baseline, "inputs")
-        self.configuration = baseline["report"]["configuration"]
-        # Only command-line-exposed measurement counts may differ from current defaults.
+        recorded = baseline["report"]["configuration"]
         expected = load(REPO / "evaluator/config.json")
         for key in ("repetitions", "warmups"):
-            expected[key] = self.configuration[key]
-        if expected != self.configuration:
+            expected[key] = recorded[key]
+        # Acceptance targets may change, but measurement inputs may not.
+        old_measurement = {k: v for k, v in recorded.items() if k != "library_reduction_target_percent"}
+        new_measurement = {k: v for k, v in expected.items() if k != "library_reduction_target_percent"}
+        if old_measurement != new_measurement:
             raise ValueError("Baseline configuration is incompatible with the current evaluator")
-        if baseline["report"]["evaluator_version"] != self.version():
-            self.records.event("baseline_stale", summary="Evaluator changed; running a fresh self-check.",
+        expected["library_reduction_target_percent"] = self.args.library_reduction_target_percent
+        self.configuration = expected
+        if baseline["report"]["evaluator_version"] != self.version() or recorded != expected:
+            self.records.event("baseline_stale", summary="Evaluator or acceptance target changed; running a fresh self-check.",
                                evidence=baseline["report_ref"])
             baseline = self.refresh_baseline("initial")
         self.records.event("baseline_ready", summary="Validated full-workload reference prepared.",
@@ -155,7 +159,8 @@ class Components:
     def evaluation_args(self):
         args = ["--cache", str(self.args.cache), "--books", ",".join(book["id"] for book in self.books),
                 "--repetitions", str(self.configuration["repetitions"]),
-                "--warmups", str(self.configuration["warmups"])]
+                "--warmups", str(self.configuration["warmups"]),
+                "--library-reduction-target-percent", str(self.configuration["library_reduction_target_percent"])]
         for field in ("browser", "cargo_home"):
             value = getattr(self.args, field)
             if value:
@@ -184,9 +189,10 @@ class Components:
         task = {
             "schema_version": "optimizer-task/v1", "experiment_id": self.root.name,
             "attempt_id": attempt, "request_id": attempt + "-optimize",
-            "task": {"objective": "Reduce elasticlunr-rs indexing and complete mdBook build time.",
+            "task": {"objective": "Reduce elasticlunr-rs indexing and serialization time; report mdBook build time separately.",
                      "focus": "One application-source-backed specialization; use prior evidence to choose the change.",
-                     "success_rule": "Preserve supported behavior; both aggregate metrics improve beyond noise; audit every candidate."},
+                     "success_rule": "Correctness passes; the lower 95% bound for aggregate library time reduction meets the target and exceeds noise; audit finds no unresolved issue. Application timing does not block success.",
+                     "library_reduction_target_percent": self.configuration["library_reduction_target_percent"]},
             "inputs": {"baseline_ref": baseline["identity_ref"],
                        "previous_candidate_ref": previous["manifest_ref"] if previous else None,
                        "profile_ref": self.records.ref(context / "profile.txt") if (context / "profile.txt").exists() else None,
@@ -202,7 +208,8 @@ class Components:
                               "books": "books/", "workload_manifest": "evaluation/books.json",
                               "measurements": "evaluation/report.json", "feedback": "feedback.txt",
                               "note": "Paths here are relative to the optimizer's read-only context; artifact refs are relative to the experiment root."},
-            "requirements": {"behavior": "Preserve interface, serialization, errors and uncommon supported inputs; workload contents do not establish guarantees.",
+            "requirements": {"editable_source": "library/ only; application code is read-only and must not be changed or replaced.",
+                             "behavior": "Preserve interface, serialization, errors and uncommon supported inputs; workload contents do not establish guarantees.",
                              "optimization_rules": "Cite application source. No benchmark identities, precomputed outputs, weakened tests, or dependency changes."},
             "execution": {"timeout_seconds": self.args.optimizer_timeout,
                           "local_builds_and_correctness_tests": True, "official_evaluation": False,
@@ -308,6 +315,8 @@ class Components:
             parts.append(str(feedback["error"]))
         for metric, result in performance.get("aggregate", {}).items():
             parts.append(f"{metric}: {result['explanation']}")
+        if performance.get("qualification"):
+            parts.append(performance["qualification"]["explanation"])
         parts.append("Individual-book regressions: " + json.dumps(performance.get("regressions", [])))
         return " ".join(parts)
 
@@ -413,5 +422,7 @@ class Components:
         if evaluation["evaluator_version"] != self.version() or baseline["report"]["evaluator_version"] != self.version():
             raise ValueError("Cannot qualify stale evaluation evidence")
         feedback = evaluation_feedback(evaluation["report"])
+        if evaluation["report"].get("configuration") != self.configuration:
+            raise ValueError("Cannot qualify evidence with a different acceptance target")
         if feedback["outcome"] != "improved" or audit["status"] != "no-issue-found":
             raise ValueError("Candidate did not qualify")

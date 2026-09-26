@@ -47,6 +47,31 @@ class EvaluatorBoundaryTests(unittest.TestCase):
             self.assertEqual(json.loads((root / f"{mutation}.json").read_text())[mutation], [filename])
         self.assertFalse((root / "output").exists())
 
+    def test_cli_records_target_override(self):
+        output = self.root / "target-run"
+        def execute(args, run, report, commands, env):
+            self.assertEqual(report["configuration"]["library_reduction_target_percent"], 30)
+            report["status"] = "validated"
+        with patch.object(sys, "argv", ["run.py", "self-check", "--output", str(output),
+                                         "--library-reduction-target-percent", "30"]), \
+                patch.object(evaluator, "build_environment", return_value={}), \
+                patch.object(evaluator, "runtime_info", return_value={}), \
+                patch.object(evaluator, "execute", side_effect=execute):
+            self.assertEqual(evaluator.main(), 0)
+        self.assertEqual(json.loads((output / "report.json").read_text())["configuration"][
+            "library_reduction_target_percent"], 30)
+
+    def test_cli_rejects_invalid_target_before_creating_run(self):
+        output = self.root / "invalid-target"
+        for value in ("-1", "100", "nan", "inf"):
+            with self.subTest(value=value), \
+                    patch.object(sys, "argv", ["run.py", "self-check", "--output", str(output),
+                                              f"--library-reduction-target-percent={value}"]), \
+                    self.assertRaises(SystemExit) as raised:
+                evaluator.main()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertFalse(output.exists())
+
     def test_replay_rejects_corrupt_output_even_with_plausible_metrics(self):
         output = self.root / "index"
         stdout = self.root / "stdout"
@@ -72,7 +97,8 @@ class EvaluatorBoundaryTests(unittest.TestCase):
                 evaluator.index_replay(self.root / "replay", self.root / "trace", output,
                                        b"right", command, {})
 
-    def execute_with_stub_toolchain(self, failure=None, *, index_bias=False, fixture_search=None):
+    def execute_with_stub_toolchain(self, failure=None, *, index_bias=False,
+                                    application_bias=False, fixture_search=None, mode="self-check"):
         """Exercise real orchestration and file checking without compiling upstream."""
         metadata = self.root / "metadata"
         metadata.mkdir()
@@ -136,11 +162,13 @@ class EvaluatorBoundaryTests(unittest.TestCase):
                 Path(argv[2]).write_bytes(content)
                 seconds = 0.02 if index_bias and "original" in executable.parts else 0.01
                 stdout.write_text(json.dumps({"elapsed_seconds": seconds, "output_bytes": len(content)}))
-            return {"stdout": str(stdout), "elapsed_seconds": 0.01}
+            elapsed = .02 if application_bias and "original" in executable.parts else .01
+            return {"stdout": str(stdout), "elapsed_seconds": elapsed}
 
         report = {"configuration": {"warmups": 0, "repetitions": 3,
-                                    "bootstrap_resamples": 100, "bootstrap_seed": 1}}
-        args = SimpleNamespace(cache=self.root / "cache", candidate=None, books=None, mode="self-check")
+                                    "bootstrap_resamples": 100, "bootstrap_seed": 1,
+                                    "library_reduction_target_percent": 20}}
+        args = SimpleNamespace(cache=self.root / "cache", candidate=None, books=None, mode=mode)
         with ExitStack() as stack:
             for name, replacement in (("HERE", metadata), ("setup_gui", lambda *args: self.root),
                                       ("prepare_variants", lambda *args: variants),
@@ -173,8 +201,19 @@ class EvaluatorBoundaryTests(unittest.TestCase):
         _, report = self.execute_with_stub_toolchain(index_bias=True)
         self.assertEqual(report["analysis"]["aggregate"]["application"]["verdict"], "inconclusive")
         self.assertEqual(report["analysis"]["aggregate"]["index"]["verdict"], "improved")
-        self.assertEqual(report["analysis"]["verdict"], "inconclusive")
+        self.assertEqual(report["analysis"]["verdict"], "improved")
         self.assertEqual(report["status"], "calibration-warning")
+
+    def test_self_check_still_warns_about_application_only_timing_bias(self):
+        _, report = self.execute_with_stub_toolchain(application_bias=True)
+        self.assertEqual(report["analysis"]["aggregate"]["application"]["verdict"], "improved")
+        self.assertEqual(report["analysis"]["aggregate"]["index"]["verdict"], "inconclusive")
+        self.assertEqual(report["status"], "calibration-warning")
+
+    def test_candidate_qualifies_with_library_gain_and_unchanged_application(self):
+        _, report = self.execute_with_stub_toolchain(index_bias=True, mode="run")
+        self.assertEqual(report["analysis"]["aggregate"]["application"]["verdict"], "inconclusive")
+        self.assertEqual(report["status"], "improved")
 
     def test_self_check_accepts_when_both_timing_metrics_agree(self):
         _, report = self.execute_with_stub_toolchain()

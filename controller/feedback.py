@@ -3,6 +3,9 @@
 from copy import deepcopy
 import math
 
+from evaluator.core import (EvaluationError, library_qualification,
+                            validate_library_reduction_target)
+
 
 class FeedbackError(ValueError):
     """An evaluator report is malformed or contradicts its measurements."""
@@ -49,7 +52,7 @@ def _metric(raw, repetitions, label):
         raise FeedbackError(f"{label} pairs do not match configured repetitions")
     medians = {key: _positive(raw.get(key), f"{label}.{key}") for key in (
         "original_median_seconds", "candidate_median_seconds")}
-    reduction, lower, upper = [100 * (1 - 1 / value) for value in (speedup, lo, hi)]
+    reduction, lower, upper = [100 - 100 / value for value in (speedup, lo, hi)]
     if not all(math.isfinite(value) for value in (reduction, lower, upper)):
         raise FeedbackError(f"{label} percentage conversion is not finite")
     if verdict == "improved":
@@ -83,6 +86,11 @@ def _metric(raw, repetitions, label):
 
 def _measurement(config):
     config = _object(config, "configuration")
+    if "library_reduction_target_percent" in config:
+        try:
+            validate_library_reduction_target(config["library_reduction_target_percent"])
+        except EvaluationError as exc:
+            raise FeedbackError(str(exc)) from exc
     repetitions = _integer(config.get("repetitions"), 3, "configuration.repetitions")
     warmups = _integer(config.get("warmups"), 0, "configuration.warmups")
     resamples = _integer(config.get("bootstrap_resamples"), 1, "configuration.bootstrap_resamples")
@@ -129,6 +137,15 @@ def evaluation_feedback(report):
         if report.get("error"):
             raise FeedbackError("A completed evaluator report contains an error")
     measurement = _measurement(report.get("configuration"))
+    legacy = "library_reduction_target_percent" not in report["configuration"]
+    target = report["configuration"].get("library_reduction_target_percent")
+    decision_rule = (
+        "Legacy evidence: both aggregate metrics must have a 95% speedup interval entirely above 1. "
+        "This historical report has no library reduction target and is not reclassified under the new rule."
+        if legacy else
+        f"The lower 95% bound of aggregate library-work time reduction must meet the {target:g}% target "
+        "and exceed zero. Application performance is reported separately and does not block library success."
+    ) + " Individual-book regressions remain visible and do not change the aggregate rule."
     checks = _object(report.get("correctness", {}), "correctness")
     for book, check in checks.items():
         if not isinstance(book, str) or not book:
@@ -143,6 +160,7 @@ def evaluation_feedback(report):
     if outcome in COMPLETE_OUTCOMES and not checks:
         raise FeedbackError("Completed evaluation has no correctness evidence")
     correctness_status = ("failed" if outcome == "correctness-failed" else
+                          "not_completed" if outcome == "incomplete" else
                           "passed" if checks else "not_completed")
     feedback = {
         "schema_version": "evaluator-feedback/v1",
@@ -163,7 +181,19 @@ def evaluation_feedback(report):
             "status": "not_measured",
             "aggregate": {}, "per_book": {}, "regressions": [],
             "measurement": measurement,
-            "decision_rule": "Both aggregate metrics must have a 95% speedup interval entirely above 1. Individual-book regressions do not change this aggregate rule.",
+            "decision_rule": decision_rule,
+            "qualification": {
+                "criterion": "legacy-both-metrics/v1" if legacy else "library-time-reduction/v1",
+                "legacy": legacy,
+                "library_reduction_target_percent": target,
+                "time_reduction_lower_bound_95_percent": None,
+                "meets_target": None,
+                "met": False,
+                "application_blocks_success": legacy,
+                "reason_code": "not_measured",
+                "explanation": "No complete timing analysis is available for qualification.",
+                "scope": "Evaluator performance and correctness gate only; the controller also requires a resolved, clean audit.",
+            },
             "environment": deepcopy(report.get("environment", {})),
         },
         "error": report.get("error"),
@@ -208,9 +238,36 @@ def evaluation_feedback(report):
         combined = math.exp(sum(math.log(values[key]["speedup"]) for values in books.values()) / len(books))
         if not math.isclose(aggregate[key]["speedup"], combined, rel_tol=1e-9):
             raise FeedbackError(f"Aggregate {key} speedup contradicts equal-weight book results")
-    expected = ("improved" if all(value["verdict"] == "improved" for value in aggregate.values())
-                else "slower" if any(value["verdict"] == "slower" for value in aggregate.values())
-                else "inconclusive")
+    qualification = performance["qualification"]
+    index = performance["aggregate"]["indexing"]
+    qualification["time_reduction_lower_bound_95_percent"] = index["time_reduction_interval_95"][0]
+    if legacy:
+        expected = ("improved" if all(value["verdict"] == "improved" for value in aggregate.values())
+                    else "slower" if any(value["verdict"] == "slower" for value in aggregate.values())
+                    else "inconclusive")
+        qualification.update(reason_code="legacy_rule", explanation=decision_rule)
+    else:
+        policy = library_qualification(aggregate["index"], target)
+        if analysis.get("performance_policy") != policy:
+            raise FeedbackError("Analysis performance policy contradicts the configured target or indexing measurements")
+        expected = policy["verdict"]
+        lower = policy["time_reduction_confidence_interval_95"][0]
+        qualification.update(time_reduction_lower_bound_95_percent=lower,
+                             meets_target=policy["meets_target"])
+        if policy["meets_target"]:
+            reason, explanation = "library_target_met", (
+                f"The lower 95% library-work time-reduction bound is {lower:.2f}%, meeting the {target:g}% target "
+                "and exceeding zero. Application performance does not block library success.")
+        elif index["verdict"] == "improved":
+            reason, explanation = "library_improved_below_target", (
+                f"Library work improved beyond measurement noise, but its lower 95% time-reduction bound "
+                f"of {lower:.2f}% falls below the {target:g}% target. The required reduction is not established.")
+        elif index["verdict"] == "slower":
+            reason, explanation = "library_slower", "Library work is measurably slower; the library improvement target is not met."
+        else:
+            reason, explanation = "library_improvement_not_established", (
+                "The library-work confidence interval includes no change; an improvement beyond noise is not established.")
+        qualification.update(reason_code=reason, explanation=explanation)
     if analysis.get("verdict") != expected:
         raise FeedbackError("Analysis verdict contradicts the aggregate performance rule")
     if outcome in PERFORMANCE_OUTCOMES and outcome != expected:
@@ -221,9 +278,17 @@ def evaluation_feedback(report):
             raise FeedbackError("Self-check status contradicts calibration measurements")
     performance["status"] = "measured" if outcome in COMPLETE_OUTCOMES else "run_invalid"
     performance["aggregate_verdict"] = expected
+    qualification["met"] = mode == "run" and outcome == "improved"
+    if mode == "self-check":
+        qualification.update(met=False, reason_code="self_check_calibration",
+                             explanation="This original-versus-original run checks calibration; both aggregate intervals must include no change. It cannot qualify a candidate.")
+    if performance["status"] == "run_invalid":
+        qualification.update(met=False, reason_code="run_invalid",
+                             explanation="The evaluation failed; retained measurements cannot qualify a candidate.")
     measurement["books_measured"] = len(books)
     feedback["summary"] = " ".join(
         f"{name}: {value['explanation']}" for name, value in performance["aggregate"].items())
+    feedback["summary"] += " " + qualification["explanation"]
     if performance["regressions"]:
         feedback["summary"] += f" Individual-book slowdown signals: {len(performance['regressions'])}; inspect regressions."
     if performance["status"] == "run_invalid":

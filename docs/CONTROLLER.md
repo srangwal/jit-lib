@@ -94,18 +94,46 @@ must not label a candidate successful on the optimizer's assertion alone.
   missing evidence prevents an audit from completing, record that limitation;
   the candidate cannot qualify with an incomplete audit.
 - Stop at the first qualifying candidate, or when the attempt budget is used.
-  Qualification requires passing correctness, an aggregate improvement beyond
-  measurement noise in both indexing and complete book-building time, and a
-  completed audit reporting no issue found. No issue found is limited to the
+  Qualification requires passing correctness, a lower 95% confidence bound for
+  aggregate library time reduction that meets the configured target (default
+  20%), and a completed audit reporting no issue found. Application timing is
+  reported separately and does not block library success. No issue found is limited to the
   audit's scope; it is not proof that no violation exists.
 - Let the optimizer explicitly choose whether to revise the previous candidate
   or restart from the original. Record the choice and its reason before editing.
   Always compare candidates against the unchanged original library.
-- Retain the evaluator's existing aggregate performance rule. Prominently show
-  individual-book regressions; aggregate improvement does not mean every book
-  improved. Results must use the current checks before they can qualify.
+- Measure library indexing, serialization, and cleanup with the existing timer.
+  Use equal book weights and prominently show individual-book regressions.
+  Results must use the current checks and recorded target before they qualify.
+- The optimizer may change library code only. Keep application sources protected;
+  changing the application is not a valid optimization.
 
 These policies are implemented by the controller. Standalone component commands
 perform one operation and do not run the experiment loop.
+
+## Agreed next step: complete candidate history
+
+This is the approved design; the current implementation still supplies the
+latest candidate and feedback. Before every attempt, the controller will provide
+a concise table of **every** earlier candidate, plus read-only access to the
+complete supporting evidence.
+
+| Each entry contains | Purpose |
+| --- | --- |
+| Candidate ID, starting candidate, proposal, and changes | Understand what was tried and why. |
+| Correctness, library/application measurements, and confidence intervals | See outcomes and measurement uncertainty. |
+| Per-book regressions, audit findings, and unresolved questions | Avoid repeating failures or overlooking concerns. |
+| Source snapshot, patch, logs, and evaluator version | Inspect and reproduce the exact attempt. |
+
+The optimizer may choose any earlier candidate, combine compatible ideas from
+several candidates, or restart from the original. Before editing, record the
+chosen starting snapshot, all contributing candidate IDs, and the reason for
+the choice. The new candidate records those parent links and its exact patch so
+a reader can follow its evolution. Combining ideas creates a new candidate that
+needs fresh evaluation and audit; parent results do not transfer automatically.
+
+Preserve old measurements with their evaluator version and mark them stale when
+checks change. Every candidate still compares against the unchanged original.
+Missing evidence and attempts that produced no candidate remain visible.
 
 See [WORKFLOW.md](WORKFLOW.md) for how the roles connect.

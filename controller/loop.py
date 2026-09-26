@@ -47,7 +47,7 @@ def experiment(records, components, max_attempts=5):
             components.verify_qualification(baseline, candidate, evaluation, audit)
             records.verify()
             records.event("decision", attempt_id=attempt, decision="qualify",
-                          summary="Correctness passed, both aggregate metrics improved, and audit found no issue.",
+                          summary="Correctness passed, the library time-reduction target was met with 95% confidence, and audit found no issue. Application performance is reported separately.",
                           evidence=evaluation["result_ref"], audit=audit["result_ref"],
                           candidate=candidate["manifest_ref"])
             return {"status": "qualified", "attempts": number,

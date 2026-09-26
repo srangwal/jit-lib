@@ -35,6 +35,9 @@ def main(argv=None):
         parser.add_argument(f"--{role}-agent", choices=AGENTS)
         parser.add_argument(f"--{role}-model")
     parser.add_argument("--local-base-url", help="Local OpenAI-compatible URL for components using OpenCode")
+    parser.add_argument("--library-reduction-target-percent", type=float,
+                        default=load(REPO / "evaluator/config.json")["library_reduction_target_percent"],
+                        help="Required lower 95%% confidence bound for library time reduction (default: 20)")
     parser.add_argument("--profile", type=Path, help="Optional measured profile; absence is recorded")
     parser.add_argument("--browser", type=Path)
     parser.add_argument("--cargo-home", type=Path)
@@ -43,6 +46,8 @@ def main(argv=None):
     for field in ("optimizer_timeout", "evaluation_timeout", "audit_timeout"):
         if not math.isfinite(getattr(args, field)) or getattr(args, field) <= 0:
             parser.error(f"--{field.replace('_', '-')} must be positive and finite")
+    if not math.isfinite(args.library_reduction_target_percent) or not 0 <= args.library_reduction_target_percent < 100:
+        parser.error("--library-reduction-target-percent must be finite and in [0, 100)")
     if args.optimizer_timeout > 600:
         parser.error("Optimizer budget cannot exceed 600 seconds per attempt")
     try:
@@ -83,7 +88,9 @@ def main(argv=None):
         try:
             config = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
             config.update(policy={"audit": "every_candidate", "stop": "first_qualifying_candidate",
-                                  "performance": "existing_aggregate_rule", "starting_point": "optimizer_choice"},
+                                  "performance": "library-time-reduction/v1",
+                                  "library_reduction_target_percent": args.library_reduction_target_percent,
+                                  "application_performance_blocks_success": False, "starting_point": "optimizer_choice"},
                           code_versions={name: evaluator_fingerprint(REPO / name)
                                          for name in ("controller", "optimizer", "evaluator", "auditor", "coding_agents")})
             for name, version in config["code_versions"].items():

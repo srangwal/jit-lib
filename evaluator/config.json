@@ -11,5 +11,6 @@
   "repetitions": 10,
   "bootstrap_resamples": 10000,
   "bootstrap_seed": 20260924,
+  "library_reduction_target_percent": 20,
   "command_timeout_seconds": 1200
 }

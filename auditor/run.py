@@ -19,7 +19,8 @@ sys.path.insert(0, str(REPO))
 from auditor.agent import check_login, configuration, investigate, validate_response
 from auditor.evidence import prepare_evidence
 from auditor.probes import run_probe, validate_probe
-from evaluator.core import evaluator_fingerprint, inventory, record_progress, sha256, write_json
+from evaluator.core import (evaluator_fingerprint, inventory, record_progress, sha256,
+                            validate_library_reduction_target, write_json)
 from coding_agents.config import add_arguments, apply_arguments, EXECUTABLES, snapshot as snapshot_runtime
 
 
@@ -207,9 +208,18 @@ def candidate_checkout(package, root):
 
 def reevaluate(package, root, args):
     """Rebuild exactly the submitted candidate files in a temporary Git index."""
+    report = json.loads((package["root"] / "evaluation/report.json").read_text())
+    config = report.get("configuration", {})
+    field = "library_reduction_target_percent"
+    source = "evaluation-report"
+    if field not in config:
+        # Historical runs predate this policy; make the new default explicit.
+        config = json.loads((REPO / "evaluator/config.json").read_text())
+        source = "current-evaluator-default"
+    target = validate_library_reduction_target(config[field])
     candidate = candidate_checkout(package, root)
     argv = [sys.executable, str(REPO / "evaluator/run.py"), "run", "--candidate", str(candidate),
-            "--cache", str(root / "reevaluation")]
+            "--cache", str(root / "reevaluation"), "--library-reduction-target-percent", str(target)]
     for flag in ("browser", "cargo_home"):
         value = getattr(args, flag)
         if value:
@@ -218,7 +228,8 @@ def reevaluate(package, root, args):
     with (root / "reevaluation.log").open("w") as log:
         process = subprocess.run(argv, stdout=log, stderr=subprocess.STDOUT)
     reports = sorted((root / "reevaluation/runs").glob("*/report.json"))
-    return {"exit_code": process.returncode, "report": str(reports[-1]) if reports else None}
+    return {"exit_code": process.returncode, "report": str(reports[-1]) if reports else None,
+            field: target, "library_reduction_target_source": source}
 
 
 def save_report(root, report):
