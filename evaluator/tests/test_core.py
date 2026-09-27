@@ -9,7 +9,20 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core import (Commands, CorrectnessError, EvaluationError, analyse, compare, inventory,
-                  library_qualification, markdown_report, paired_summary)
+                  library_qualification, markdown_report, paired_summary, self_check_calibration)
+
+
+class CalibrationTests(unittest.TestCase):
+    def test_inclusive_five_percent_boundaries_for_each_metric(self):
+        for name in ("application", "index"):
+            for reduction, passed in ((-5.001, False), (-5, True), (0, True), (5, True), (5.001, False)):
+                with self.subTest(metric=name, reduction=reduction):
+                    aggregate = {key: {"speedup": 1} for key in ("application", "index")}
+                    aggregate[name]["speedup"] = 1 / (1 - reduction / 100)
+                    policy = self_check_calibration(aggregate)
+                    self.assertEqual(policy["passed"], passed)
+                    self.assertEqual(policy["metrics"][name]["within_tolerance"], passed)
+                    self.assertAlmostEqual(policy["metrics"][name]["time_reduction_percent"], reduction)
 
 
 class OutputComparisonTests(unittest.TestCase):

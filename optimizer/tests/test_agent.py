@@ -79,6 +79,28 @@ print('{"type":"turn.completed"}')
         self.assertEqual(settings["timeout_seconds"], 600)
         self.assertEqual(settings["environment"]["TMPDIR"], str(self.workspace / "tmp"))
 
+    def test_correction_prompt_keeps_source_fixed_and_omits_base_selection(self):
+        rejection = {"error": "Expected application/path:line", "response": {"status": "candidate"}}
+        self.optimize('''import json,sys
+from pathlib import Path
+prompt=sys.stdin.read()
+assert "Expected application/path:line" in prompt
+assert "Do not edit library source" in prompt
+assert "There is initially no library/" not in prompt
+assert "Remaining attempt time: 45 seconds" in prompt
+Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps({"status":"candidate","summary":"Corrected"}))
+''', correction=rejection, timeout=45)
+        self.assertIn("reporting-only correction", (self.destination / "prompt.md").read_text())
+
+    def test_external_agents_receive_correction_prompt(self):
+        for name in ("claude", "opencode"):
+            with patch("optimizer.agent.run_external", return_value={"status": "candidate", "summary": "Corrected"}) as run:
+                agent.optimize(self.workspace, self.context, self.root / name, agent=name,
+                               correction={"error": "Bad citation", "response": {}}, timeout=30)
+            self.assertIn("Bad citation", run.call_args.args[4])
+            self.assertIn("Do not edit library source", run.call_args.args[4])
+            self.assertEqual(run.call_args.kwargs["timeout"], 30)
+
     def test_explicit_model_effort_and_timeout_are_retained(self):
         self.optimize('''import json,sys
 from pathlib import Path

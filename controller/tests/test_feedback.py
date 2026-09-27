@@ -8,7 +8,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from controller.feedback import FeedbackError, evaluation_feedback
-from evaluator.core import library_qualification
+from evaluator.core import library_qualification, self_check_calibration
 
 
 def metric(speedup=1.25, interval=(1.2, 1.3)):
@@ -121,7 +121,7 @@ class FeedbackTests(unittest.TestCase):
         self.assertIsNone(qualification["library_reduction_target_percent"])
         self.assertIn("not reclassified", result["performance"]["decision_rule"])
 
-    def test_new_self_check_still_requires_both_metrics_to_be_inconclusive(self):
+    def test_historical_self_check_requires_both_metrics_to_be_inconclusive(self):
         raw = targeted_report(index=metric(1, (.98, 1.02)), application=metric(.9, (.85, .95)))
         raw.update(mode="self-check", status="calibration-warning")
         result = evaluation_feedback(raw)
@@ -133,6 +133,38 @@ class FeedbackTests(unittest.TestCase):
         raw = targeted_report(index=metric(1, (.98, 1.02)))
         raw.update(mode="self-check", status="validated")
         self.assertEqual(evaluation_feedback(raw)["outcome"], "validated")
+
+    def test_point_difference_calibration_ignores_interval_for_pass_fail(self):
+        for name in ("application", "index"):
+            for reduction, interval, passed in (
+                (2, (1.01, 1.03), True),
+                (-5, (.94, .96), True),
+                (5, (1.04, 1.06), True),
+                (5.01, (.9, 1.2), False),
+                (-5.01, (.9, 1.2), False),
+            ):
+                with self.subTest(metric=name, reduction=reduction):
+                    metrics = {key: metric(1, (.98, 1.02)) for key in ("application", "index")}
+                    metrics[name] = metric(1 / (1 - reduction / 100), interval)
+                    raw = targeted_report(**metrics)
+                    raw.update(mode="self-check", status="validated" if passed else "calibration-warning")
+                    raw["calibration_policy"] = self_check_calibration(raw["analysis"]["aggregate"])
+                    result = evaluation_feedback(raw)
+                    self.assertEqual(result["performance"]["calibration"]["passed"], passed)
+                    self.assertFalse(result["performance"]["qualification"]["met"])
+                    self.assertIn("+/-5%", result["performance"]["decision_rule"])
+                    raw["status"] = "calibration-warning" if passed else "validated"
+                    with self.assertRaisesRegex(FeedbackError, "calibration measurements"):
+                        evaluation_feedback(raw)
+
+    def test_calibration_policy_tampering_is_rejected(self):
+        raw = targeted_report(index=metric(1, (.98, 1.02)))
+        raw.update(mode="self-check", status="validated")
+        policy = self_check_calibration(raw["analysis"]["aggregate"])
+        for field, value in (("tolerance_percent", 10), ("passed", False), ("criterion", "unknown")):
+            raw["calibration_policy"] = {**policy, field: value}
+            with self.assertRaisesRegex(FeedbackError, "calibration policy"):
+                evaluation_feedback(raw)
 
     def test_improvement_and_asymmetric_interval_are_in_time_units(self):
         raw = report()

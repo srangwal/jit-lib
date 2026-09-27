@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import builds
 from builds import check_dependency_lock, local_env, run_suites, snapshot, use_library
 from core import EvaluationError
 
@@ -15,6 +16,40 @@ class BuildTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    def test_variants_build_at_one_path_without_sharing_artifacts(self):
+        observed = []
+        for name in ('original', 'candidate'):
+            source = self.root / 'variants' / name
+            source.mkdir(parents=True)
+            (source / 'source.rs').write_text(name)
+            with builds.build_workspace(source) as workspace:
+                observed.append(workspace)
+                self.assertFalse(source.exists())
+                self.assertEqual((workspace / 'source.rs').read_text(), name)
+                self.assertFalse((workspace / 'target').exists())
+                (workspace / 'target').mkdir()
+                (workspace / 'target/artifact').write_text(name)
+            self.assertEqual((source / 'target/artifact').read_text(), name)
+            self.assertFalse(workspace.exists())
+        self.assertEqual(observed[0], observed[1])
+
+    def test_failed_build_restores_source_and_logs_without_overwriting(self):
+        source = self.root / 'variants/original'
+        source.mkdir(parents=True)
+        with self.assertRaisesRegex(RuntimeError, 'compiler failed'):
+            with builds.build_workspace(source) as workspace:
+                (workspace / 'failure.txt').write_text('compiler evidence')
+                raise RuntimeError('compiler failed')
+        self.assertEqual((source / 'failure.txt').read_text(), 'compiler evidence')
+        occupied = self.root / 'build-workspace'
+        occupied.mkdir()
+        (occupied / 'evidence').write_text('preserve')
+        with self.assertRaises(EvaluationError):
+            with builds.build_workspace(source):
+                self.fail('An occupied build workspace must not be reused')
+        self.assertEqual((occupied / 'evidence').read_text(), 'preserve')
+        self.assertTrue(source.is_dir())
 
     def test_dependency_lock_rejects_transitive_version_changes(self):
         def lock(path, version, library_source):

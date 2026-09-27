@@ -3,7 +3,7 @@
 from copy import deepcopy
 import math
 
-from evaluator.core import (EvaluationError, library_qualification,
+from evaluator.core import (EvaluationError, library_qualification, self_check_calibration,
                             validate_library_reduction_target)
 
 
@@ -273,15 +273,30 @@ def evaluation_feedback(report):
     if outcome in PERFORMANCE_OUTCOMES and outcome != expected:
         raise FeedbackError("Evaluator status contradicts its analysis verdict")
     if outcome in {"validated", "calibration-warning"}:
-        calibrated = all(value["verdict"] == "inconclusive" for value in aggregate.values())
+        if "calibration_policy" in report:
+            policy = self_check_calibration(aggregate)
+            if report["calibration_policy"] != policy:
+                raise FeedbackError("Self-check calibration policy contradicts measurements or the 5% tolerance")
+            performance["calibration"] = deepcopy(policy)
+            calibrated = policy["passed"]
+        else:
+            # Preserve historical evidence under the rule that produced it.
+            calibrated = all(value["verdict"] == "inconclusive" for value in aggregate.values())
         if (outcome == "validated") != calibrated:
             raise FeedbackError("Self-check status contradicts calibration measurements")
     performance["status"] = "measured" if outcome in COMPLETE_OUTCOMES else "run_invalid"
     performance["aggregate_verdict"] = expected
     qualification["met"] = mode == "run" and outcome == "improved"
     if mode == "self-check":
+        rule = (
+            "Both aggregate measured time differences must be within +/-5% of original time, inclusive; "
+            "confidence intervals do not determine calibration."
+            if "calibration_policy" in report else
+            "Historical self-check: both aggregate intervals must include no change."
+        )
+        performance["decision_rule"] = rule
         qualification.update(met=False, reason_code="self_check_calibration",
-                             explanation="This original-versus-original run checks calibration; both aggregate intervals must include no change. It cannot qualify a candidate.")
+                             explanation=f"This original-versus-original run checks calibration. {rule} It cannot qualify a candidate.")
     if performance["status"] == "run_invalid":
         qualification.update(met=False, reason_code="run_invalid",
                              explanation="The evaluation failed; retained measurements cannot qualify a candidate.")

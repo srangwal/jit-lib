@@ -98,7 +98,7 @@ class EvaluatorBoundaryTests(unittest.TestCase):
                                        b"right", command, {})
 
     def execute_with_stub_toolchain(self, failure=None, *, index_bias=False,
-                                    application_bias=False, fixture_search=None, mode="self-check"):
+                                    application_bias=False, fixture_search=None, mode="self-check", small_bias=False):
         """Exercise real orchestration and file checking without compiling upstream."""
         metadata = self.root / "metadata"
         metadata.mkdir()
@@ -119,7 +119,8 @@ class EvaluatorBoundaryTests(unittest.TestCase):
             library.mkdir()
             (application / "Cargo.lock").write_text('version = 4\n\n[[package]]\nname = "stub"\nversion = "0.1.0"\n')
             binary = application / "mdbook"
-            binary.write_bytes(name.encode())
+            binary.write_bytes(name.encode() if failure == 'application-build' else b'mdbook')
+            (library / 'identity').write_text(name)
             variants[name] = {
                 "application": application, "library": library, "binary": binary,
                 "provenance": {"binary_sha256": sha256(binary)},
@@ -127,7 +128,9 @@ class EvaluatorBoundaryTests(unittest.TestCase):
 
         def prepare_replay(destination, library, lock):
             (destination / "target/release").mkdir(parents=True)
-            (destination / "target/release/index-replay").write_bytes(b"stub")
+            identity = (library / 'identity').read_text()
+            (destination / "target/release/index-replay").write_bytes(
+                identity.encode() if failure == 'replay-build' else b'stub')
             (destination / "Cargo.lock").write_bytes(lock.read_bytes())
 
         def prepare_book(entry, source, destination, env, commands):
@@ -140,6 +143,8 @@ class EvaluatorBoundaryTests(unittest.TestCase):
 
         def commands(argv, *, cwd, env):
             argv = list(argv)
+            if argv[0] == 'cargo' and 'build' in argv:
+                self.assertEqual(Path(cwd), evidence.resolve() / 'build-workspace/replay')
             calls.append(list(map(str, argv)))
             stdout = evidence / f"stdout-{len(calls)}"
             stdout.write_text("")
@@ -163,6 +168,10 @@ class EvaluatorBoundaryTests(unittest.TestCase):
                 seconds = 0.02 if index_bias and "original" in executable.parts else 0.01
                 stdout.write_text(json.dumps({"elapsed_seconds": seconds, "output_bytes": len(content)}))
             elapsed = .02 if application_bias and "original" in executable.parts else .01
+            if small_bias and "candidate" in executable.parts:
+                elapsed = .0098
+                if executable.name == "index-replay":
+                    stdout.write_text(json.dumps({"elapsed_seconds": .0098, "output_bytes": len(content)}))
             return {"stdout": str(stdout), "elapsed_seconds": elapsed}
 
         report = {"configuration": {"warmups": 0, "repetitions": 3,
@@ -175,13 +184,22 @@ class EvaluatorBoundaryTests(unittest.TestCase):
                                       ("run_suites", lambda *args: {}),
                                       ("prepare_replay", prepare_replay), ("prepare_book", prepare_book)):
                 stack.enter_context(patch.object(evaluator, name, replacement))
-            with self.assertRaises(CorrectnessError) if failure else nullcontext():
+            error_type = EvaluationError if failure in ('application-build', 'replay-build') else CorrectnessError
+            with self.assertRaises(error_type) if failure else nullcontext():
                 evaluator.execute(args, evidence, report, commands, {})
         if failure:
             self.assertFalse((evidence / "timings.json").exists())
             self.assertFalse((evidence / "timing-work").exists())
             self.assertNotIn("analysis", report)
         return calls, report
+
+    def test_self_check_rejects_different_application_binaries_before_timing(self):
+        _, report = self.execute_with_stub_toolchain('application-build')
+        self.assertFalse(report['build_reproducibility']['application'])
+
+    def test_self_check_rejects_different_replay_binaries_before_timing(self):
+        _, report = self.execute_with_stub_toolchain('replay-build')
+        self.assertFalse(report['build_reproducibility']['index_replay'])
 
     def test_capture_mismatch_stops_before_replay_or_performance(self):
         calls, _ = self.execute_with_stub_toolchain("capture")
@@ -214,6 +232,13 @@ class EvaluatorBoundaryTests(unittest.TestCase):
         _, report = self.execute_with_stub_toolchain(index_bias=True, mode="run")
         self.assertEqual(report["analysis"]["aggregate"]["application"]["verdict"], "inconclusive")
         self.assertEqual(report["status"], "improved")
+
+    def test_self_check_accepts_small_difference_even_when_intervals_exclude_zero(self):
+        _, report = self.execute_with_stub_toolchain(small_bias=True)
+        self.assertEqual(report["status"], "validated")
+        self.assertTrue(report["calibration_policy"]["passed"])
+        for metric in report["analysis"]["aggregate"].values():
+            self.assertEqual(metric["verdict"], "improved")
 
     def test_self_check_accepts_when_both_timing_metrics_agree(self):
         _, report = self.execute_with_stub_toolchain()

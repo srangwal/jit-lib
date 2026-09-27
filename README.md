@@ -87,8 +87,12 @@ python3 evaluator/run.py self-check
 This compares the original library against itself. The first run downloads
 dependencies and compiles several copies, so allow substantial time and disk
 space. The command prints the location of `report.md` and `report.json`.
-Expected status: `validated`. A `calibration-warning` means timing noise or bias
-needs investigation; do not keep rerunning to obtain a favorable result.
+Expected status: `validated`. Both aggregate measured time differences must be
+within ±5% of original time, inclusive. Confidence intervals are reported but do
+not decide this self-check. A `calibration-warning` means a difference exceeds
+that tolerance and needs investigation; do not keep rerunning to obtain a
+favorable result. Candidate evaluation still requires the lower 95% confidence
+bound for library time reduction to meet the target (default 20%).
 
 ### 5. Create and evaluate a candidate
 

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 
@@ -16,7 +17,7 @@ def prepare_replay(destination: Path, library: Path, lockfile_source: Path) -> P
     shutil.copy2(template / "src/main.rs", destination / "src/main.rs")
     manifest = (template / "Cargo.toml").read_text().replace(
         'elasticlunr-rs = "=3.0.2"',
-        f"elasticlunr-rs = {{ path = {json.dumps(str(library.resolve()))} }}",
+        f"elasticlunr-rs = {{ path = {json.dumps(os.path.relpath(library.resolve(), destination.resolve()))} }}",
     )
     (destination / "Cargo.toml").write_text(manifest)
     shutil.copy2(lockfile_source, destination / "Cargo.lock")

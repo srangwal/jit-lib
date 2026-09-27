@@ -34,10 +34,15 @@ Application time is reported separately and does not block library success. The 
 Before evaluating a modified library:
 
 - Compare the original against itself to confirm matching outputs and establish normal timing variation.
+- Build each variant independently at the same physical path, retaining separate artifacts. Before timing the self-check, require identical application and replay executables. Identical source alone does not establish identical machine code.
 - Deliberately change or remove a generated file and confirm that the correctness checker rejects the result.
 
-The self-check still requires both aggregate timing intervals to include no
-change. A candidate passes performance when library work meets its target; the
+The self-check passes timing calibration when the measured aggregate time
+reduction is between −5% and +5%, inclusive, for **both** indexing and application
+builds. Percentages are relative to original time, using
+`100 * (1 - 1 / speedup)`. Confidence intervals are still reported but do not
+determine this pass. A +1.22% difference passes; a +5.1% difference fails.
+This tolerance applies only to original-versus-original checks. A candidate passes performance when library work meets its target; the
 controller also requires correctness and a completed audit with no unresolved
 issue. Indexing still includes construction, serialization, and cleanup. Detailed
 phase profiling is a planned diagnostic addition, not a new acceptance metric.

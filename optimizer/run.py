@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from time import monotonic
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -22,7 +23,7 @@ from coding_agents.runtime import check_login
 from coding_agents.config import add_arguments, apply_arguments, EXECUTABLES, snapshot
 from evaluator.core import evaluator_fingerprint, inventory, record_progress, write_json
 from optimizer.agent import optimize, probe_workspace
-from optimizer.artifacts import freeze, seed_cargo_cache
+from optimizer.artifacts import SourceReferenceError, freeze, seed_cargo_cache, source_inventory
 from optimizer.context import prepare_context
 from optimizer.task import prepare_task_inputs
 from optimizer.checkpoints import BaseCheckpoints
@@ -35,6 +36,10 @@ def report_markdown(report):
              "This attempt has no independent correctness or performance verdict.", ""]
     if "error" in report:
         lines += [f"Error: {report['error']}", ""]
+    if "submission_correction" in report:
+        correction = report["submission_correction"]
+        lines += [f"Submission correction: **{correction['status']}**. See `rejected-submission.json` "
+                  "and `agent-correction/` for the error, prompt, response, and trace.", ""]
     if "starting_point" in report:
         choice = report["starting_point"]
         lines += [f"Starting point: **{choice['base_candidate_id']}**. {choice['reason']}", ""]
@@ -148,15 +153,20 @@ def main(argv=None):
         checkpoints = BaseCheckpoints(workspace, context, output, report)
         print(f"Starting one {args.timeout:g}-second optimizer session. Logs: {output / 'agent'}", flush=True)
         record_progress(output, "session_started", remaining_seconds=args.timeout)
+        deadline = monotonic() + args.timeout
         response = optimize(workspace, context, output / "agent", executable=executable, model=args.model,
                             reasoning_effort=args.reasoning_effort, timeout=args.timeout, agent=args.agent,
                             base_url=args.local_base_url, checkpoint_handler=checkpoints)
         checkpoints.verify()
         report["response"] = response
         record_progress(output, "session_completed", response_status=response["status"], evidence="agent/response.json")
-        if (inventory(context) != protected or evaluator_fingerprint(HERE) != report["optimizer_version"]
-                or evaluator_fingerprint(REPO / "coding_agents") != report["coding_agents_version"]):
-            raise RuntimeError("Protected context or optimizer source changed during the attempt")
+        def verify_inputs():
+            checkpoints.verify()
+            if (inventory(context) != protected or evaluator_fingerprint(HERE) != report["optimizer_version"]
+                    or evaluator_fingerprint(REPO / "coding_agents") != report["coding_agents_version"]):
+                raise RuntimeError("Protected context or optimizer source changed during the attempt")
+
+        verify_inputs()
         if checkpoints.starting_library is None:
             if response["status"] != "no-change" or (workspace / "library").exists():
                 raise ValueError("A candidate requires a trusted base checkpoint before editing")
@@ -166,7 +176,32 @@ def main(argv=None):
                 raise ValueError("Optimizer must explain its result")
             report["candidate"] = None
         else:
-            report["candidate"] = freeze(workspace, context, output, response, starting_library=checkpoints.starting_library)
+            try:
+                report["candidate"] = freeze(workspace, context, output, response, starting_library=checkpoints.starting_library)
+            except SourceReferenceError as error:
+                rejection = {"error": str(error), "response": response}
+                write_json(output / "rejected-submission.json", rejection)
+                report["submission_correction"] = {
+                    "status": "rejected", "rejection": "rejected-submission.json",
+                    "response": "agent-correction/response.json",
+                }
+                record_progress(output, "submission_rejected", evidence="rejected-submission.json")
+                verify_inputs()
+                submitted_files = source_inventory(workspace / "library")
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("No optimizer time remains to correct the submission") from error
+                record_progress(output, "submission_correction_started", remaining_seconds=remaining)
+                response = optimize(workspace, context, output / "agent-correction", executable=executable,
+                                    model=args.model, reasoning_effort=args.reasoning_effort, timeout=remaining,
+                                    agent=args.agent, base_url=args.local_base_url, correction=rejection)
+                report["response"] = response
+                verify_inputs()
+                if source_inventory(workspace / "library") != submitted_files:
+                    raise RuntimeError("Submission correction changed the candidate source")
+                report["candidate"] = freeze(workspace, context, output, response, starting_library=checkpoints.starting_library)
+                report["submission_correction"]["status"] = "accepted"
+                record_progress(output, "submission_correction_completed", evidence="agent-correction/response.json")
         report["status"] = "candidate-created" if report["candidate"] else "no-change"
         record_progress(output, "export_completed", status=report["status"],
                         evidence="changes.json" if checkpoints.starting_library is not None else "report.json")

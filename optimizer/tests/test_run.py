@@ -65,6 +65,77 @@ class RunTests(unittest.TestCase):
         self.assertNotIn("performance_verdict", report)
         self.assertEqual(list(self.baseline.iterdir()), [self.baseline / "unchanged"])
 
+    def invalid_reference_candidate(self, workspace, context, destination, **kwargs):
+        self.select(workspace, kwargs)
+        (workspace / "library/src/lib.rs").write_text("candidate\n")
+        (workspace / "proposal.md").write_text("A proposal\n")
+        value = response()
+        value["guarantees"][0]["application_references"] = ["original/src/lib.rs:1"]
+        return value
+
+    def test_rejected_references_get_one_correction_with_remaining_budget(self):
+        def correction(workspace, context, destination, **kwargs):
+            self.assertEqual(destination, self.output / "agent-correction")
+            self.assertNotIn("checkpoint_handler", kwargs)
+            self.assertEqual(kwargs["timeout"], 450)
+            self.assertIn("Expected application/path:line", kwargs["correction"]["error"])
+            self.assertEqual((workspace / "library/src/lib.rs").read_text(), "candidate\n")
+            return response()
+        calls = [self.invalid_reference_candidate, correction]
+        with patch("optimizer.run.optimize", side_effect=lambda *a, **kw: calls.pop(0)(*a, **kw)) as agent, \
+                patch("optimizer.run.monotonic", side_effect=[100, 250], create=True):
+            self.assertEqual(self.run_cli(), 0)
+        self.assertEqual(agent.call_count, 2)
+        report = json.loads((self.output / "report.json").read_text())
+        self.assertEqual(report["submission_correction"]["status"], "accepted")
+        self.assertTrue((self.output / "rejected-submission.json").is_file())
+        self.assertEqual((self.output / "candidate/src/lib.rs").read_text(), "candidate\n")
+
+    def test_invalid_correction_is_not_retried(self):
+        invalid = response()
+        invalid["guarantees"][0]["application_references"] = ["original/src/lib.rs:1"]
+        count = 0
+        def agent(*args, **kwargs):
+            nonlocal count
+            count += 1
+            return self.invalid_reference_candidate(*args, **kwargs) if count == 1 else invalid
+        with patch("optimizer.run.optimize", side_effect=agent):
+            self.assertEqual(self.run_cli(), 1)
+        self.assertEqual(count, 2)
+        self.assertFalse((self.output / "candidate").exists())
+
+    def test_exhausted_budget_does_not_launch_correction(self):
+        with patch("optimizer.run.optimize", side_effect=self.invalid_reference_candidate) as agent, \
+                patch("optimizer.run.monotonic", side_effect=[100, 701], create=True):
+            self.assertEqual(self.run_cli(), 1)
+        self.assertEqual(agent.call_count, 1)
+        self.assertIn("No optimizer time remains", (self.output / "report.md").read_text())
+
+    def test_correction_cannot_change_source_or_protected_inputs(self):
+        for target in ("workspace/library/src/lib.rs", "context/application/src/lib.rs"):
+            with self.subTest(target=target):
+                output = self.root / target.split('/')[0]
+                def agent(workspace, context, destination, **kwargs):
+                    if "correction" not in kwargs:
+                        return self.invalid_reference_candidate(workspace, context, destination, **kwargs)
+                    path = output / target
+                    path.chmod(0o644)
+                    path.write_text("tampered\n")
+                    return response()
+                with patch("optimizer.run.optimize", side_effect=agent):
+                    self.assertEqual(self.run_cli(["--baseline", str(self.baseline), "--output", str(output)]), 1)
+                self.assertFalse((output / "candidate").exists())
+
+    def test_integrity_failure_does_not_launch_correction(self):
+        def agent(workspace, context, destination, **kwargs):
+            value = self.invalid_reference_candidate(workspace, context, destination, **kwargs)
+            (workspace / "library/Cargo.lock").write_text("tampered")
+            return value
+        with patch("optimizer.run.optimize", side_effect=agent) as mock:
+            self.assertEqual(self.run_cli(), 1)
+        self.assertEqual(mock.call_count, 1)
+        self.assertIn("lockfile", (self.output / "report.md").read_text())
+
     def test_no_change_retains_report_without_candidate(self):
         with patch("optimizer.run.optimize", return_value=response("no-change")):
             self.assertEqual(self.run_cli(), 0)

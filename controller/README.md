@@ -17,6 +17,10 @@ By default, both components use your Codex account. It requires the same macOS, 
 and dependency setup as the standalone components. A stale evaluator version
 triggers a fresh self-check before optimization. A calibration warning stops
 the experiment; it does not retry for more favorable measurements.
+Self-check timing passes when both aggregate measured differences are within
+±5% of original time, inclusive. Confidence intervals remain visible but do not
+determine this calibration result. Candidate acceptance still uses the lower
+95% confidence bound and the configured library improvement target.
 
 The defaults implement the agreed policy:
 

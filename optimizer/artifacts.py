@@ -17,6 +17,10 @@ from evaluator.core import differences, inventory, sha256, write_json
 HERE = Path(__file__).resolve().parent
 
 
+class SourceReferenceError(ValueError):
+    """A source citation can be corrected without editing the candidate."""
+
+
 def copy_files(source, destination, files):
     destination.mkdir(parents=True, exist_ok=False)
     for name in files:
@@ -61,10 +65,10 @@ def validate_submission(response, context, workspace, changed):
     def reference(value, prefix, root):
         match = re.fullmatch(r"(.+):(\d+)", value)
         if not match or not match[1].startswith(prefix + "/"):
-            raise ValueError(f"Expected {prefix}/path:line source reference: {value}")
+            raise SourceReferenceError(f"Expected {prefix}/path:line source reference: {value}")
         path = safe_path(root, match[1])
         if not path.is_file() or not 1 <= int(match[2]) <= len(path.read_text().splitlines()):
-            raise ValueError(f"Source reference does not identify an existing line: {value}")
+            raise SourceReferenceError(f"Source reference does not identify an existing line: {value}")
 
     for guarantee in response["guarantees"]:
         if not guarantee["claim"].strip() or not guarantee["application_references"]:

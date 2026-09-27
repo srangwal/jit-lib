@@ -12,11 +12,11 @@ import shutil
 import sys
 import tomllib
 
-from builds import prepare_variants, registry_packages, run_suites, setup_gui
+from builds import build_workspace, prepare_variants, registry_packages, run_suites, setup_gui
 from capture_index import prepare_replay
 from core import (Commands, CorrectnessError, EvaluationError, analyse, compare,
                   evaluator_fingerprint, inventory, markdown_report, record_progress, sha256,
-                  validate_library_reduction_target, write_json)
+                  self_check_calibration, validate_library_reduction_target, write_json)
 from prepare_books import prepare_book
 from environment import build_environment, runtime_info
 
@@ -96,19 +96,30 @@ def execute(args, run, report, commands, env):
     report["variants"] = {name: variants[name]["provenance"] for name in (*VARIANTS, "capture")}
     report["suites"] = {}
     for name in VARIANTS:
-        report["suites"][name] = run_suites(variants[name], env, commands, gui)
+        with build_workspace(run / "variants" / name) as workspace:
+            building = {**variants[name], "application": workspace / "application",
+                        "library": workspace / "library"}
+            report["suites"][name] = run_suites(building, env, commands, gui)
+            replay_root = workspace / "replay"
+            prepare_replay(replay_root, building["library"], building["application"] / "Cargo.lock")
+            commands(["cargo", "build", "--release"], cwd=replay_root, env=env)
+            extra = registry_packages(replay_root / "Cargo.lock") - registry_packages(
+                building["application"] / "Cargo.lock")
+            if extra:
+                raise EvaluationError(f"Replay dependencies differ from application: {sorted(extra)}")
+            commands(["cargo", "test", "--locked"], cwd=replay_root, env=env)
         replay_root = run / "variants" / name / "replay"
-        prepare_replay(replay_root, variants[name]["library"],
-                       variants[name]["application"] / "Cargo.lock")
-        commands(["cargo", "build", "--release"], cwd=replay_root, env=env)
-        extra = registry_packages(replay_root / "Cargo.lock") - registry_packages(
-            variants[name]["application"] / "Cargo.lock")
-        if extra:
-            raise EvaluationError(f"Replay dependencies differ from application: {sorted(extra)}")
-        commands(["cargo", "test", "--locked"], cwd=replay_root, env=env)
         variants[name]["replay"] = replay_root / "target/release/index-replay"
         variants[name]["provenance"]["replay_binary_sha256"] = sha256(variants[name]["replay"])
         variants[name]["provenance"]["replay_lock_sha256"] = sha256(replay_root / "Cargo.lock")
+
+    if args.mode == "self-check":
+        report["build_reproducibility"] = {
+            metric: report["variants"]["original"][key] == report["variants"]["candidate"][key]
+            for metric, key in (("application", "binary_sha256"), ("index_replay", "replay_binary_sha256"))
+        }
+        if not all(report["build_reproducibility"].values()):
+            raise EvaluationError("Identical self-check source produced different executables; investigate build reproducibility before timing")
 
     # All compilation and preprocessing preparation finishes before any timings.
     entries = json.loads((HERE / "books.json").read_text())
@@ -221,12 +232,15 @@ def execute(args, run, report, commands, env):
                                   config["bootstrap_resamples"], config["bootstrap_seed"],
                                   config["library_reduction_target_percent"])
     if args.mode == "self-check":
-        report["status"] = ("validated" if all(metric["verdict"] == "inconclusive"
-                                             for metric in report["analysis"]["aggregate"].values())
-                            else "calibration-warning")
+        policy = self_check_calibration(report["analysis"]["aggregate"])
+        report["calibration_policy"] = policy
+        report["status"] = "validated" if policy["passed"] else "calibration-warning"
         report["calibration"] = (
-            "Original versus original: no real speedup is possible. An interval excluding 1 "
-            "indicates timing bias or a statistical false positive; investigate before accepting candidates."
+            "Original versus original: both aggregate measured time differences must be within +/-5% "
+            "of original time, including the boundaries. Confidence intervals are reported but do not "
+            "determine calibration. This self-check cannot demonstrate an optimization. "
+            + " ".join(f"{name}: {value['time_reduction_percent']:+.2f}% time reduction."
+                       for name, value in policy["metrics"].items())
         )
     else:
         report["status"] = report["analysis"]["verdict"]

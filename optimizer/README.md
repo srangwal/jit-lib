@@ -102,6 +102,25 @@ relative to the original; `attempt-changes.json` describes changes from the
 chosen starting point. `no-change` means the selected starting point was left
 unchanged, and produces no new candidate.
 
+## Submission references and correction
+
+Application guarantees must cite `application/path:line` in
+`guarantees[].application_references`. Library implementation explanations belong
+in `why_behavior_is_preserved`, with `original/path:line` or `library/path:line`
+in `library_references`. At least one reference must identify the original
+library's unnecessary work. Every cited file and line is checked.
+
+If a reference has the wrong prefix or a nonexistent line, the runner allows
+**one reporting-only correction call**, using the same agent and model and only
+the time left in the attempt. It does not grant another ten minutes. The agent
+receives the rejected response and exact error. It cannot select a new base;
+the runner verifies that the library source remains unchanged.
+
+A second invalid submission, exhausted budget, or integrity failure stops the
+attempt. Validation remains strict. `rejected-submission.json` preserves the
+original response and error; `agent-correction/` records the correction prompt,
+response, and trace. `report.json` and `progress.jsonl` record the outcome.
+
 ## Read the output
 
 The command prints `.optimizer/attempts/<attempt-id>/report.md`. It contains the

@@ -144,3 +144,28 @@ test lockfile to candidate copies for local builds and records the resulting
 context manifest. The controller checks that manifest against the supplied
 history. The final submission binds task IDs/hash, copied inputs, base
 checkpoints, candidate manifest, and explanation.
+
+## Self-check calibration evidence
+
+New self-check reports include `calibration_policy` with criterion
+`self-check-point-difference/v1`, `tolerance_percent: 5`, the percentage formula,
+per-metric `time_reduction_percent` and `within_tolerance`, and overall `passed`.
+Both aggregate metrics must be within ±5%, inclusive; confidence intervals do
+not decide calibration. The controller recomputes this policy and rejects a
+contradictory status or policy. Feedback retains it as `performance.calibration`.
+
+Historical reports without this field retain their original interval-based rule;
+they are not relabeled. A changed evaluator fingerprint requires a fresh
+self-check. This change does not alter candidate acceptance: the lower 95%
+library time-reduction bound must meet the configured target (default 20%).
+
+## Optimizer submission corrections
+
+A source-reference validation error may trigger one correction call inside the
+same optimizer attempt and remaining time budget. The candidate source and base
+must remain unchanged. Application references accept only `application/path:line`;
+library references accept `original/path:line` or `library/path:line`, with at
+least one original-library reference. The optimizer retains the rejected response
+and error in `rejected-submission.json`, correction logs in `agent-correction/`,
+and its result in `report.json.submission_correction`. A correction is not a new
+candidate attempt or an evaluation result. Unresolved errors still stop the run.

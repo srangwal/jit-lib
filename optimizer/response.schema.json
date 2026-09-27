@@ -23,7 +23,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Only application/path:line references to existing lines in the read-only application. Never original/ or library/ references."
           }
         },
         "required": [
@@ -31,7 +32,8 @@
           "application_references"
         ],
         "additionalProperties": false
-      }
+      },
+      "description": "Application usage guarantees supported by application source. Library implementation details belong in why_behavior_is_preserved and library_references."
     },
     "removed_work": {
       "type": "string"
@@ -40,7 +42,8 @@
       "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "description": "Existing source lines as original/path:line or library/path:line. Include at least one original/ reference identifying unnecessary work."
     },
     "why_behavior_is_preserved": {
       "type": "string"

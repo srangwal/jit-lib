@@ -205,6 +205,26 @@ def paired_summary(pairs, resamples=10000, seed=20260924):
     }
 
 
+def self_check_calibration(aggregate):
+    """Allow up to 5% aggregate time difference relative to the original."""
+    tolerance = 5
+    metrics = {}
+    for name in ("application", "index"):
+        speedup = aggregate[name]["speedup"]
+        # Ratio bounds avoid rounding the inclusive +/-5% percentage boundaries.
+        metrics[name] = {
+            "time_reduction_percent": 100 - 100 / speedup,
+            "within_tolerance": 1 / (1 + tolerance / 100) <= speedup <= 1 / (1 - tolerance / 100),
+        }
+    return {
+        "criterion": "self-check-point-difference/v1",
+        "tolerance_percent": tolerance,
+        "time_reduction_formula": "100 * (1 - 1 / speedup_ratio)",
+        "metrics": metrics,
+        "passed": all(value["within_tolerance"] for value in metrics.values()),
+    }
+
+
 def validate_library_reduction_target(value):
     if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value < 100:
         raise EvaluationError("library reduction target must be finite and in [0, 100) percent")

@@ -54,6 +54,13 @@ The checker also deliberately changes, removes, and adds files and must reject
 each alteration. Fixture details are in `fixtures/README.md`; pinned real books
 and preparation commands are in `books.json`.
 
+Each variant builds in turn at the same physical `build-workspace/` path. Its
+source and private target directories then move back under `variants/<name>/`.
+Artifacts are never shared between variants. This prevents directory names from
+changing Cargo's crate identities and generated code. Command logs retain the
+build-time paths; `variants.*.build_workspace` in `report.json` and phase records
+map them to the retained files. An occupied workspace is an error, not a cache.
+
 The [auditor](../auditor/README.md) can add reproduced failures as permanent
 fixtures. Reports record an `evaluator_version` fingerprint of the harness and
 fixtures. A run cannot finish successfully if these files change while it runs.
@@ -95,9 +102,24 @@ original-versus-original runs. Intervals apply to this fixed corpus and
 machine, not unseen books. These are supervised measurements, not protection
 against a library deliberately falsifying timings or modifying its environment.
 
-`self-check` can never demonstrate a real optimization. It reports a calibration
-warning if identical variants appear significantly different. Investigate the
-machine or measurement conditions before accepting candidate results.
+`self-check` compares the original with itself. It passes timing calibration when
+both aggregate measured time differences (indexing and application builds) are
+within **±5%**, including exactly −5% and +5%. Use the same time-reduction formula
+as candidate reports: `100 * (1 - 1 / speedup)`, relative to original time. These
+are the equal-weight aggregate estimates, not individual-book limits or ratios
+of medians. For example, a measured +1.22% reduction passes even when its 95%
+interval excludes zero. A +5.1% reduction fails even if its interval includes zero.
+
+Confidence intervals remain visible but do not decide calibration. The JSON
+`calibration_policy` records the rule, tolerance, measured differences, and pass
+flags; the Markdown report explains the result. A difference outside the limit
+produces `calibration-warning` and stops the controller. Investigate before
+restarting. Self-checks never demonstrate an optimization. Candidate acceptance
+still requires the lower 95% library time-reduction bound to meet the target
+(default 20%), plus correctness and a clean audit.
+Before timing, it also requires the independently built original and candidate
+application and replay executables to be byte-identical. A mismatch stops the run
+with a build-reproducibility error; `build_reproducibility` records which differed.
 
 Defaults are recorded in `config.json`. `--books rust-by-example,rustonomicon`
 selects a recorded subset; `--repetitions N` and `--warmups N` override counts.

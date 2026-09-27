@@ -99,9 +99,20 @@ or auditing, access unrelated user data, or start background processes.
 
 Return the structured response required by the supplied schema. Explain the work
 removed, workload-specific benefit, correctness argument, diagnostic findings,
-and remaining uncertainties. Source references use context-relative paths and
-line numbers, such as `application/path.rs:100` and `original/src/lib.rs:300`.
-Include original-library evidence; changed source may use `library/src/lib.rs:300`.
+and remaining uncertainties. Use these field-specific reference rules:
+
+- `guarantees`: application usage guarantees only. Every `application_references`
+  entry must use `application/path:line`, for example `application/src/search.rs:100`.
+- `library_references`: original-library evidence uses `original/path:line`;
+  changed-source evidence uses `library/path:line`. Include at least one `original/`
+  reference explaining the unnecessary work.
+- Put implementation claims, such as a fallback path or serialization behavior,
+  in `why_behavior_is_preserved`, with evidence in `library_references`. Do not put
+  them in application guarantees merely because they help explain correctness.
+
+Verify each path and line exists. Never put `original/` or `library/` references in
+`application_references`. A rejected source citation may receive one correction
+call within the remaining time budget; that call must leave library code unchanged.
 Report local checks as passed, failed, or not-run and retain their logs. These are
 agent-reported observations, not independent acceptance results.
 

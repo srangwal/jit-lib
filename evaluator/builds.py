@@ -1,6 +1,7 @@
 """Build pinned application/library copies and run their existing test suites."""
 
 import json
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import shutil
@@ -8,9 +9,34 @@ import subprocess
 import tomllib
 
 from capture_index import instrument
-from core import EvaluationError, inventory, sha256, write_json
+from core import EvaluationError, inventory, record_progress, sha256, write_json
 
 ROOT = Path(__file__).resolve().parent
+
+
+@contextmanager
+def build_workspace(variant_root):
+    """Compile independent variants at one path, retaining their separate targets.
+
+    Cargo incorporates external path dependency locations into crate identities.
+    Different variant paths can therefore change generated code without a source
+    change. Move the whole tree, including its own target directories, temporarily.
+    """
+    variant_root = Path(variant_root).resolve()
+    workspace = variant_root.parent.parent / "build-workspace"
+    if workspace.exists() or workspace.is_symlink():
+        raise EvaluationError(f"Build workspace already exists; preserve it and use a new run: {workspace}")
+    variant_root.rename(workspace)
+    try:
+        record_progress(workspace.parent, "build_workspace_entered", variant=variant_root.name,
+                        temporary_path=str(workspace), retained_path=str(variant_root))
+        yield workspace
+    finally:
+        if variant_root.exists() or variant_root.is_symlink():
+            raise EvaluationError(f"Cannot restore build evidence over an existing path: {variant_root}")
+        workspace.rename(variant_root)
+        record_progress(workspace.parent, "build_workspace_restored", variant=variant_root.name,
+                        retained_path=str(variant_root))
 
 
 def output(commands, argv, cwd, env):
@@ -109,17 +135,19 @@ def prepare_variants(cache_root, run_root, candidate_path_or_None, env, commands
         use_library(application, library)
         if name == "capture":
             instrument(application)
-        metadata = json.loads(output(commands, ["cargo", "metadata", "--format-version", "1"],
-                                     application, env))
-        resolved = [p for p in metadata["packages"] if p["name"] == "elasticlunr-rs"]
-        if len(resolved) != 1 or Path(resolved[0]["manifest_path"]).resolve() != library / "Cargo.toml":
-            raise EvaluationError(f"{name}: Cargo did not resolve the intended library copy")
-        for package in metadata["packages"]:
-            path = Path(package["manifest_path"]).resolve()
-            if package["source"] is None and not (path.is_relative_to(application) or path.is_relative_to(library)):
-                raise EvaluationError(f"Dependency outside source snapshot: {path}")
-        check_dependency_lock(sources["application"] / "Cargo.lock", application / "Cargo.lock")
-        commands(["cargo", "build", "--release", "--locked", "--bin", "mdbook"], cwd=application, env=env)
+        with build_workspace(root) as workspace:
+            build_application, build_library = workspace / "application", workspace / "library"
+            metadata = json.loads(output(commands, ["cargo", "metadata", "--format-version", "1"],
+                                         build_application, env))
+            resolved = [p for p in metadata["packages"] if p["name"] == "elasticlunr-rs"]
+            if len(resolved) != 1 or Path(resolved[0]["manifest_path"]).resolve() != build_library / "Cargo.toml":
+                raise EvaluationError(f"{name}: Cargo did not resolve the intended library copy")
+            for package in metadata["packages"]:
+                path = Path(package["manifest_path"]).resolve()
+                if package["source"] is None and not (path.is_relative_to(build_application) or path.is_relative_to(build_library)):
+                    raise EvaluationError(f"Dependency outside source snapshot: {path}")
+            check_dependency_lock(sources["application"] / "Cargo.lock", build_application / "Cargo.lock")
+            commands(["cargo", "build", "--release", "--locked", "--bin", "mdbook"], cwd=build_application, env=env)
         binary = application / "target/release/mdbook"
         provenance = {
             "application_revision": config["application"]["revision"],
@@ -128,6 +156,7 @@ def prepare_variants(cache_root, run_root, candidate_path_or_None, env, commands
             "binary_sha256": sha256(binary), "application_lock_sha256": sha256(application / "Cargo.lock"),
             "library_test_lock_sha256": sha256(library / "Cargo.lock"),
             "capture_instrumentation": name == "capture",
+            "build_workspace": {"temporary_path": str(workspace), "retained_path": str(root)},
         }
         write_json(root / "provenance.json", provenance)
         variants[name] = {"application": application, "library": library, "binary": binary,
