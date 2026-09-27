@@ -78,8 +78,11 @@ cannot excuse changed supported behavior. A failed tool call cannot become a
 successful verdict.
 
 When an audit adds a validated check, preserve the new evaluator version and
-rerun the frozen candidate against it. Keep earlier results attached to the
-version that produced them.
+run a fresh self-check. Reevaluate the current frozen candidate, then every
+earlier candidate whose audit found no issue. These fresh measurements support
+future targets and selection; old measurements retain their evaluator version.
+The prior audit still applies to the same frozen code, and is not rerun by this
+step. Reevaluation never clears a confirmed violation or unresolved audit finding.
 
 The output is an experiment history: candidate identities, evaluation results,
 audit findings, revisions, and the reason the experiment stopped. The controller
@@ -87,13 +90,18 @@ must not label a candidate successful on the optimizer's assertion alone.
 
 ## Agreed first-version policy
 
-- Run at most five optimizer attempts, with up to ten minutes per attempt.
-  Evaluation and auditing take additional time; this is not a fifty-minute
-  limit for the whole experiment.
+- Run at least three optimizer attempts and at most five. Each attempt defaults
+  to ten minutes; a per-run override can increase its limit to four hours.
+  Auditor agent calls have a separate configurable limit, and the whole audit
+  has an outer limit covering all calls and probes. Evaluation and auditing take
+  additional time. No-change responses count as attempts;
+  infrastructure failures or cancellation can stop the run sooner.
 - Audit every submitted candidate, regardless of its evaluation verdict. If
   missing evidence prevents an audit from completing, record that limitation;
   the candidate cannot qualify with an incomplete audit.
-- Stop at the first qualifying candidate, or when the attempt budget is used.
+- From attempt three onward, stop once any candidate qualifies, or when the
+  attempt budget is used. Select the qualifier with the highest lower confidence
+  bound; exact ties favor the earlier attempt.
   Qualification requires passing correctness, a lower 95% confidence bound for
   aggregate library time reduction that meets the configured target (default
   20%), and a completed audit reporting no issue found. Application timing is
@@ -110,6 +118,27 @@ must not label a candidate successful on the optimizer's assertion alone.
 
 These policies are implemented by the controller. Standalone component commands
 perform one operation and do not run the experiment loop.
+
+## Acceptance and stretch targets
+
+The acceptance threshold is configured before the experiment and stays fixed.
+Each optimizer attempt also receives a stretch target:
+
+```text
+stretch = max(acceptance threshold, min(95%, 1.5 × best previous measured reduction))
+```
+
+Use the best measured aggregate library reduction from any earlier candidate
+that passed correctness and a completed audit with no issue found. Its evaluation
+must be complete and use the current checks. With no eligible result, use the
+acceptance threshold. A worse attempt does not lower the target while the same
+best result remains eligible. All gains compare with the original library.
+
+For a 20% acceptance threshold, an earlier 19% measured reduction sets the next
+stretch target to 28.5%. The optimizer should aim beyond that target where
+feasible. The 95% ceiling never lowers a higher acceptance threshold. Stretch
+uses a measured estimate; acceptance still uses the lower 95% confidence bound.
+Record both targets and the evidence used for the calculation in each task.
 
 ## Complete candidate history
 

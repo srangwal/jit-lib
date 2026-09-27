@@ -25,7 +25,26 @@ files are checked again after evaluation/audit and before selection.
 | `requirements` | Behavior to preserve and prohibited shortcuts. |
 | `execution` | Time budget, allowed local tests and diagnostic benchmarks, and network/evaluation restrictions. |
 
-`task.library_reduction_target_percent` records the required time reduction.
+`task.library_reduction_target_percent` records the fixed acceptance threshold.
+`task.optimizer_stretch_target` records the ambition for this attempt using
+`schema_version: optimizer-stretch-target/v1`: the target
+`time_reduction_percent`, `acceptance_threshold_percent`, `multiplier: 1.5`,
+`ceiling_percent: 95`, and `best_previous` evidence (or `null`). The evidence
+contains `candidate_id`, `time_reduction_percent`, and hashed `evaluation` and
+`audit` references. Its measured aggregate library reduction must come from a complete
+evaluation that passed correctness and an audit reporting `no-issue-found`.
+Only measurements under the current checks are eligible.
+These references remain relative to the experiment root. The optimizer can read
+their copies at `context/history/evidence/<reference path>`.
+
+The stretch calculation is
+`max(acceptance threshold, min(95, 1.5 × best previous measured reduction))`.
+With no eligible previous result, use the acceptance threshold. Reductions are
+relative to the original library; a higher acceptance threshold takes precedence
+over the ceiling. This target guides the optimizer, not acceptance.
+`tasks/<attempt>-stretch-target.json` preserves the same calculation separately;
+the attempt-start event links it and displays both targets.
+
 `requirements.editable_source` limits source edits to the library. Application
 code stays read-only. These constraints apply to every coding-agent runtime.
 
@@ -35,10 +54,10 @@ just book names. It specializes for their usage patterns while preserving the
 application's supported library usage, including new contents and configurations.
 Workload contents alone do not prove a behavioral guarantee.
 
-`context/objective.json` records the effective `library_reduction_target_percent`
-and correctness boundary. The controller verifies its hash and target against
-the task. Local measurements are diagnostic; independent evaluation decides
-whether the candidate meets the target.
+`context/objective.json` records the effective `library_reduction_target_percent`,
+the `optimizer_stretch_target`, and correctness boundary. The controller verifies
+its hash and both targets against the task. Local measurements are diagnostic;
+independent evaluation decides whether the candidate meets the acceptance threshold.
 
 ## Optimizer base requests
 
@@ -114,9 +133,30 @@ auditor output directories.
 
 When an audit adds checks, `checks_changed` identifies the old and new evaluator
 versions and marks earlier results stale for selection. The new self-check and
-reevaluation are separate steps. Requests, results and earlier feedback are never
-overwritten. `report.md` is generated from the timeline and can be regenerated
+reevaluations are separate steps: first reevaluate the current candidate, then
+all earlier candidates whose audit found no issue. Use refreshed results for
+stretch targets and selection. The old audits remain attached to the same frozen
+code; reevaluation is not a new audit and cannot clear a confirmed or unresolved
+finding. Requests, results and earlier feedback are never overwritten.
+`report.md` is generated from the timeline and can be regenerated
 with `Records.render`; it is not a second source of decision logic.
+
+## Experiment stopping and selection
+
+The attempt budget is 3 through 5, default 5. Always complete at least three
+optimizer attempts unless a component fails or the run is cancelled. No-change
+responses consume an attempt. From attempt three onward, stop when any candidate
+qualifies under the current checks. Select the qualifier with the highest lower
+95% bound for aggregate library time reduction; exact ties favor earlier attempts.
+The fixed acceptance threshold applies throughout. The selected candidate may
+come from an earlier attempt, so final evidence links identify that candidate's
+evaluation and audit rather than assuming the latest submission won.
+
+On success, `selection.json` uses `controller-selection/v1`. It records the
+criterion `highest_lower_95_library_reduction_bound`, tie-break `earliest_attempt`,
+selected `candidate_id`, current `evaluator_version`, and all
+`qualifying_candidates` with their lower bounds and evaluation/audit references.
+The final summary links it and records `selected_candidate_id`.
 
 ## Complete history contract
 

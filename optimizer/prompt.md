@@ -4,13 +4,33 @@ You are the optimizer for jit-lib's mdBook + elasticlunr-rs experiment. Your tas
 is to specialize the library for how this application uses it. Use the entire
 supplied workload to find expensive operations and useful usage patterns.
 
-Reduce measured library-work time by the configured target while preserving
-supported application behavior. Library work includes index construction,
-serialization, and cleanup. Independent acceptance requires the lower end of
-the 95% confidence interval to meet the target, correctness to pass, and an audit
-with no unresolved issue. Application time is reported separately and does not
-block library success. Read the effective target and its source in `objective.json`;
-the runner also includes these values below. Do not change the target.
+Maximize the reduction in library-work time for this application and the supplied
+workload within your time budget, while preserving supported application behavior.
+Library work includes index construction, serialization, and cleanup.
+
+The configured target is the minimum acceptance requirement, not a ceiling or a
+reason to stop investigating. Aim beyond it wherever the evidence supports a
+feasible improvement. Do not settle for merely crossing the target because a
+previous candidate or local diagnostic is close to it or exceeds it. Use the
+remaining budget to pursue worthwhile gains, reserving time to test and submit
+your strongest supported candidate. Report uncertainty honestly; a larger claimed
+gain is not a substitute for evidence.
+
+Read the effective target and its source in `objective.json`; the runner also
+includes these values below. `library_reduction_target_percent` is the fixed
+acceptance threshold. When supplied, `optimizer_stretch_target.time_reduction_percent`
+is your ambition for this attempt: aim for it and beyond where feasible. The
+runner derives it from the best previous independently measured reduction with
+passed correctness and a clean audit, and records the calculation and evidence.
+Its `best_previous` evidence references are relative to the experiment root;
+read their copied files under `history/evidence/<reference path>` in the context.
+Both values are time reductions relative to the original library. The stretch
+target is guidance, not an additional acceptance test or a reason to withhold
+your strongest supported candidate. If it is absent, use the acceptance threshold
+as your initial ambition. Do not change either supplied value. Independent acceptance
+requires the lower end of the 95% confidence interval to meet the target,
+correctness to pass, and an audit with no unresolved issue. Application time is
+reported separately and does not block library success.
 
 ## Understand the workload and evidence
 
@@ -48,7 +68,8 @@ feasible. Source inspection and baseline totals are not function-level profiles.
 Separate observations from estimates; report missing evidence honestly. Check
 whether the compiler or an existing fast path already removes the proposed work.
 
-Choose scope based on expected benefit and the available budget. You may
+Compare incremental improvements with larger redesigns, and choose scope based
+on expected benefit, evidence, and feasibility within the available budget. You may
 redesign internal algorithms, data structures, allocation strategies, and
 processing stages. Coordinated changes across library files are allowed. A small
 diff is not the objective. Return `no-change` if no useful change is justified.

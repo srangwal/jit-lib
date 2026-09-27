@@ -154,12 +154,13 @@ Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps(
     def test_full_history_summary_and_effective_target_are_in_actual_prompt(self):
         (self.context / "history").mkdir()
         (self.context / "history/summary.md").write_text("candidate-001: indexing +12%, audit unresolved")
-        (self.context / "objective.json").write_text('{"library_reduction_target_percent":35}')
+        (self.context / "objective.json").write_text('{"library_reduction_target_percent":35,"optimizer_stretch_target":{"time_reduction_percent":45}}')
         with patch("optimizer.agent.run_external", return_value={"status": "unchanged", "summary": "None"}) as run:
             agent.optimize(self.workspace, self.context, self.destination, agent="claude")
         rendered = run.call_args.args[4]
         self.assertIn("candidate-001: indexing +12%, audit unresolved", rendered)
         self.assertIn('"library_reduction_target_percent":35', rendered)
+        self.assertIn('"optimizer_stretch_target":{"time_reduction_percent":45}', rendered)
         self.assertIn("base-request.json", rendered)
 
     def test_checkpoint_service_failure_rejects_agent_result(self):

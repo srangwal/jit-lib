@@ -31,6 +31,10 @@ Run `python3 -m unittest discover -s controller/tests -v` for controller tests.
 Run `python3 -m unittest discover -s coding_agents/tests -v` for shared agent tests.
 Optimizer/auditor accept `--agent codex|claude|opencode`; OpenCode requires a loopback model server. See `coding_agents/README.md`.
 Run `python3 controller/run.py --baseline .evaluator/runs/<validated-self-check>` for up to five attempts, auditing every submitted candidate; see `controller/README.md`.
+The controller completes at least three attempts unless interrupted or failed,
+then selects the qualifying candidate with the highest lower confidence bound.
+Its fixed acceptance threshold and per-attempt stretch target serve different purposes;
+`controller/policy.py` defines eligibility, targets, and ranking.
 
 ## Coding Style & Naming Conventions
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run up to five traceable optimization/evaluation/audit attempts."""
+"""Run three to five traceable optimization/evaluation/audit attempts."""
 
 import argparse
 from datetime import datetime, timezone
@@ -18,6 +18,7 @@ from auditor.run import check_platform
 from coding_agents.config import AGENTS, resolve
 from controller.components import Components
 from controller.loop import experiment
+from controller.policy import MIN_ATTEMPTS, MAX_ATTEMPTS, STRETCH_MULTIPLIER, STRETCH_CEILING_PERCENT
 from controller.records import Records, load, now
 from evaluator.core import evaluator_fingerprint
 
@@ -26,10 +27,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, required=True, help="Completed validated full ten-book self-check")
     parser.add_argument("--output", type=Path, help="New experiment directory")
-    parser.add_argument("--attempts", type=int, choices=range(1, 6), default=5)
-    parser.add_argument("--optimizer-timeout", type=float, default=600, help="Agent budget per attempt, at most 600 seconds")
+    parser.add_argument("--attempts", type=int, choices=range(MIN_ATTEMPTS, MAX_ATTEMPTS + 1), default=MAX_ATTEMPTS,
+                        help="Maximum attempts; always complete at least three unless interrupted or failed (default: 5)")
+    parser.add_argument("--optimizer-timeout", type=float, default=600, help="Agent budget per attempt in seconds, at most 14400 (default: 600)")
     parser.add_argument("--evaluation-timeout", type=float, default=7200, help="Whole evaluator command limit in seconds")
     parser.add_argument("--audit-timeout", type=float, default=3600, help="Whole auditor command limit in seconds")
+    parser.add_argument("--auditor-agent-timeout", type=float,
+                        default=load(REPO / "auditor/config.json")["agent_timeout_seconds"],
+                        help="Budget for each auditor agent call in seconds (default: %(default)s); also increase --audit-timeout for longer investigations")
     parser.add_argument("--model", help="Override both component models (component-specific flags take precedence)")
     for role in ("optimizer", "auditor"):
         parser.add_argument(f"--{role}-agent", choices=AGENTS)
@@ -37,19 +42,19 @@ def main(argv=None):
     parser.add_argument("--local-base-url", help="Local OpenAI-compatible URL for components using OpenCode")
     parser.add_argument("--library-reduction-target-percent", type=float,
                         default=load(REPO / "evaluator/config.json")["library_reduction_target_percent"],
-                        help="Required lower 95%% confidence bound for library time reduction (default: 20)")
+                        help="Library time-reduction target passed to the optimizer and evaluator; required lower 95%% confidence bound (default: %(default)s)")
     parser.add_argument("--profile", type=Path, help="Optional measured profile; absence is recorded")
     parser.add_argument("--browser", type=Path)
     parser.add_argument("--cargo-home", type=Path)
     parser.add_argument("--cache", type=Path, default=REPO / ".evaluator")
     args = parser.parse_args(argv)
-    for field in ("optimizer_timeout", "evaluation_timeout", "audit_timeout"):
+    for field in ("optimizer_timeout", "evaluation_timeout", "audit_timeout", "auditor_agent_timeout"):
         if not math.isfinite(getattr(args, field)) or getattr(args, field) <= 0:
             parser.error(f"--{field.replace('_', '-')} must be positive and finite")
     if not math.isfinite(args.library_reduction_target_percent) or not 0 <= args.library_reduction_target_percent < 100:
         parser.error("--library-reduction-target-percent must be finite and in [0, 100)")
-    if args.optimizer_timeout > 600:
-        parser.error("Optimizer budget cannot exceed 600 seconds per attempt")
+    if args.optimizer_timeout > 14400:
+        parser.error("Optimizer budget cannot exceed 14400 seconds per attempt")
     try:
         for role in ("optimizer", "auditor"):
             defaults = load(REPO / role / "config.json")
@@ -87,7 +92,10 @@ def main(argv=None):
                    "status": "incomplete", "started_utc": now()}
         try:
             config = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
-            config.update(policy={"audit": "every_candidate", "stop": "first_qualifying_candidate",
+            config.update(policy={"audit": "every_candidate", "stop": "qualifier_after_minimum_attempts",
+                                  "minimum_attempts": MIN_ATTEMPTS, "maximum_attempts": args.attempts,
+                                  "selection": "highest_lower_95_library_reduction_bound", "tie_break": "earliest_attempt",
+                                  "stretch_multiplier": STRETCH_MULTIPLIER, "stretch_ceiling_percent": STRETCH_CEILING_PERCENT,
                                   "performance": "library-time-reduction/v1",
                                   "library_reduction_target_percent": args.library_reduction_target_percent,
                                   "application_performance_blocks_success": False, "starting_point": "optimizer_choice"},

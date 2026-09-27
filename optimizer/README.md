@@ -78,6 +78,15 @@ describes the objective, workload recipe, requirements, and evidence references.
 The runner saves the exact brief and its hash. It cannot override sandbox or
 submission rules. Frozen baseline books remain the local workload inputs.
 
+The task supplies a fixed `library_reduction_target_percent` for acceptance and
+an `optimizer_stretch_target` for this attempt. The controller calculates stretch
+as `max(acceptance, min(95, 1.5 × best previous measured library reduction))`, using
+only complete evaluations that passed correctness and audits with no issue found,
+under the current checks. With no eligible previous result, stretch equals
+acceptance. All gains compare with the original library. Local estimates never
+set this value. Aim to maximize gains beyond the supplied targets where feasible;
+only the fixed threshold determines acceptance.
+
 One agent session investigates, chooses a base, implements, and tests using the
 same 600-second budget. Read `context/history/summary.md` for all earlier attempts;
 `ledger.json` links complete supporting evidence and source snapshots. The summary
@@ -148,7 +157,8 @@ structured response, events, and stderr. `context/` preserves inputs;
 `workspace/` preserves editing and build scratch. Never overwrite an old attempt.
 `starting-point.json` records the final selected base and hashes.
 `base-checkpoints/` retains every base decision and abandoned library snapshot.
-`context/objective.json` records the effective target and where it came from.
+`context/objective.json` records the fixed acceptance threshold, the optimizer's
+stretch target, and where those values came from.
 `progress.jsonl` records phase timestamps for preparation, boundary checks,
 the unified session, base checkpoints, export, and failures.
 These files are ignored by Git. Local check results are agent claims; independent

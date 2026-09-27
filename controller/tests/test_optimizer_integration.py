@@ -28,6 +28,10 @@ class OptimizerHistoryIntegrationTests(unittest.TestCase):
             self.assertEqual(len(ledger['entries']), number - 1)
             self.assertEqual((context / 'books/book-one/src/SUMMARY.md').read_text(), '# Chapter\n')
             self.assertEqual(load(context / 'objective.json')['library_reduction_target_percent'], 20)
+            stretch = load(context / 'objective.json')['optimizer_stretch_target']
+            self.assertEqual(stretch['time_reduction_percent'], 20 if number == 1 else 30)
+            if number > 1:
+                self.assertEqual(stretch['best_previous']['candidate_id'], 'attempt-001')
             base = 'attempt-001' if number == 3 else 'original'
             contributors = ['attempt-002'] if number == 3 else []
             request = {'request_id': 'base', 'base_candidate_id': base,
@@ -42,7 +46,8 @@ class OptimizerHistoryIntegrationTests(unittest.TestCase):
             (workspace / 'diagnostic.log').write_text('Diagnostic only; no measured speedup claim.\n')
             if number == 3:
                 self.assertEqual(len(ledger['entries'][0]['evaluations']), 1)
-                self.assertEqual(ledger['entries'][0]['audits'][0]['outcome'], 'unresolved')
+                self.assertEqual(ledger['entries'][0]['audits'][0]['outcome'], 'no-issue-found')
+                self.assertEqual(ledger['entries'][1]['audits'][0]['outcome'], 'unresolved')
                 self.assertTrue(any(name.endswith('workspace/diagnostic.log') for name in ledger['artifacts']))
             sessions.append(ledger)
             value = response()
@@ -69,7 +74,7 @@ class OptimizerHistoryIntegrationTests(unittest.TestCase):
             return {'execution_status': 'completed', 'exit_code': code, 'elapsed_seconds': .01}
 
         def findings(component, report):
-            if component == 'auditor' and fixture.calls.count('auditor') < 3:
+            if component == 'auditor' and fixture.calls.count('auditor') == 2:
                 report.update(status='unresolved', unresolved=['Needs another investigation'])
 
         fixture.components.runner = runner

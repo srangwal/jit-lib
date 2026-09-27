@@ -92,6 +92,16 @@ def prepare_task_inputs(context, *, task=None, previous_candidate=None, history=
         raise ValueError("Invalid library time-reduction target")
     objective = {"library_reduction_target_percent": target, "source": target_source,
                  "correctness_boundary": "Application library usage, including new contents and supported configurations"}
+    if task is not None:
+        stretch = json.loads((context / "task.json").read_text())["task"].get("optimizer_stretch_target")
+        if stretch is not None:
+            amount = stretch.get("time_reduction_percent") if isinstance(stretch, dict) else None
+            if (not isinstance(stretch, dict) or stretch.get("schema_version") != "optimizer-stretch-target/v1"
+                    or stretch.get("acceptance_threshold_percent") != target
+                    or isinstance(amount, bool) or not isinstance(amount, (int, float))
+                    or not math.isfinite(amount) or not target <= amount < 100):
+                raise ValueError("Invalid optimizer stretch target")
+            objective["optimizer_stretch_target"] = stretch
     write_json(context / "objective.json", objective)
     (context / "objective.json").chmod(0o444)
     result["objective"] = {"path": "context/objective.json", "sha256": sha256(context / "objective.json"), **objective}

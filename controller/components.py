@@ -182,7 +182,7 @@ class Components:
             raise ValueError("Self-check configuration or evaluator changed")
         return baseline
 
-    def optimize(self, attempt, baseline, previous, feedback):
+    def optimize(self, attempt, baseline, previous, feedback, stretch_target):
         self.unchanged_code()
         if previous:
             self.check_candidate(previous)
@@ -197,10 +197,11 @@ class Components:
         task = {
             "schema_version": "optimizer-task/v1", "experiment_id": self.root.name,
             "attempt_id": attempt, "request_id": attempt + "-optimize",
-            "task": {"objective": "Reduce elasticlunr-rs indexing and serialization time; report mdBook build time separately.",
+            "task": {"objective": "Maximize the reduction in elasticlunr-rs library-work time (index construction, serialization, and cleanup) for this application and supplied workload within the attempt budget. The configured target is a minimum acceptance requirement, not a ceiling; pursue worthwhile gains beyond it while preserving supported behavior. Report mdBook build time separately.",
                      "focus": "Specialize for this application and the complete supplied workload. Investigate substantial opportunities using all earlier candidates and evidence; preserve new supported inputs and configurations.",
                      "success_rule": "Correctness passes; the lower 95% bound for aggregate library time reduction meets the target and exceeds noise; audit finds no unresolved issue. Application timing does not block success.",
-                     "library_reduction_target_percent": self.configuration["library_reduction_target_percent"]},
+                     "library_reduction_target_percent": self.configuration["library_reduction_target_percent"],
+                     "optimizer_stretch_target": stretch_target},
             "inputs": {"baseline_ref": baseline["identity_ref"], "history_ref": history_ref,
                        "previous_candidate_ref": previous["manifest_ref"] if previous else None,
                        "profile_ref": self.records.ref(context / "profile.txt") if (context / "profile.txt").exists() else None,
@@ -257,7 +258,9 @@ class Components:
             if (objective.get("path") != "context/objective.json" or not objective_path.is_file()
                     or objective.get("sha256") != sha256(objective_path)
                     or objective.get("library_reduction_target_percent") != task["task"]["library_reduction_target_percent"]
-                    or load(objective_path).get("library_reduction_target_percent") != task["task"]["library_reduction_target_percent"]):
+                    or load(objective_path).get("library_reduction_target_percent") != task["task"]["library_reduction_target_percent"]
+                    or objective.get("optimizer_stretch_target") != stretch_target
+                    or load(objective_path).get("optimizer_stretch_target") != stretch_target):
                 raise ValueError("Optimizer used a different optimization objective")
             self.records.ref(objective_path)
             choice = report.get("starting_point")
@@ -367,6 +370,7 @@ class Components:
             "native_result": result["result_ref"], "raw_report": result["raw_ref"], "evidence": evidence})
         result["result_ref"] = ref
         result["evaluator_version"] = before
+        result["feedback"] = feedback
         if "candidate_id" in candidate:
             self.attempt_entry(candidate)["evaluations"].append({
                 "reference": ref, "outcome": result["status"], "evaluator_version": before,
@@ -452,7 +456,9 @@ class Components:
         result = self.step("auditor", attempt + "-audit", {
             "attempt_id": attempt, "candidate": candidate["manifest_ref"],
             "evaluation": evaluation["result_ref"]},
-            ["--evaluation", str(evaluation["directory"]), *self.agent_arguments("auditor")], self.args.audit_timeout)
+            ["--evaluation", str(evaluation["directory"]),
+             "--agent-timeout", str(self.args.auditor_agent_timeout),
+             *self.agent_arguments("auditor")], self.args.audit_timeout)
         if result["status"] != "incomplete":
             identity = result["report"].get("identity", {})
             if identity.get("evaluation_report_sha256") != sha256(evaluation["directory"] / "report.json"):

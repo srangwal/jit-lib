@@ -27,7 +27,8 @@ class ComponentTests(unittest.TestCase):
         self.records = Records(self.experiment)
         self.args = SimpleNamespace(baseline=self.root / "baseline", profile=None, cache=self.root / "cache",
                                     browser=None, cargo_home=None, model="gpt-6-sol", optimizer_timeout=600,
-                                    evaluation_timeout=7200, audit_timeout=3600, library_reduction_target_percent=20)
+                                    evaluation_timeout=7200, audit_timeout=3600, auditor_agent_timeout=600,
+                                    library_reduction_target_percent=20)
         self.components = Components(self.records, self.args, runner=self.runner)
         self.components.books = [{"id": "book-one", "revision": "pinned"}]
         self.calls = []
@@ -96,8 +97,9 @@ class ComponentTests(unittest.TestCase):
                       "controller_inputs": {"task": {**{key: task[key] for key in (
                           "experiment_id", "attempt_id", "request_id")}, "sha256": sha256(task_path)}},
                       "candidate": {"sha256": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()}}
-            write_json(output / "context/objective.json", {"library_reduction_target_percent": task["task"]["library_reduction_target_percent"]})
-            report["controller_inputs"]["objective"] = {"path": "context/objective.json", "sha256": sha256(output / "context/objective.json"), "library_reduction_target_percent": task["task"]["library_reduction_target_percent"]}
+            objective = {key: task["task"][key] for key in ("library_reduction_target_percent", "optimizer_stretch_target")}
+            write_json(output / "context/objective.json", objective)
+            report["controller_inputs"]["objective"] = {"path": "context/objective.json", "sha256": sha256(output / "context/objective.json"), **objective}
             history = Path(argv[argv.index("--history") + 1])
             copied_files = inventory(history)
             for candidate_id in load(history / "ledger.json")["candidates"]:
@@ -131,13 +133,30 @@ class ComponentTests(unittest.TestCase):
     def test_full_adapter_loop_qualifies_and_links_rich_feedback(self):
         result = experiment(self.records, self.components)
         self.assertEqual(result["status"], "qualified")
-        self.assertEqual(self.calls, ["optimizer", "evaluator", "auditor"])
+        self.assertEqual(self.calls, ["optimizer", "evaluator", "auditor"] * 3)
+        self.assertEqual(result["selected_candidate_id"], "attempt-001")
         feedback = load(self.experiment / result["evaluation"]["path"])
         self.assertAlmostEqual(feedback["performance"]["aggregate"]["indexing"]["time_reduction_percent"], 20)
         self.assertIn("timings.json", feedback["evidence"]["artifacts"])
         self.records.verify()
         self.records.render("qualified")
         self.assertIn("20.00%", (self.experiment / "report.md").read_text())
+
+    def test_four_hour_budgets_reach_both_agents_and_preserve_outer_limits(self):
+        self.args.optimizer_timeout = 14400
+        self.args.auditor_agent_timeout = 14400
+        self.args.audit_timeout = 44100
+        result = experiment(self.records, self.components)
+        self.assertEqual(result["status"], "qualified")
+        for number in range(1, 4):
+            attempt = f"attempt-{number:03d}"
+            task = load(self.experiment / f"tasks/{attempt}.json")
+            self.assertEqual(task["execution"]["timeout_seconds"], 14400)
+            for step, flag, outer_limit in (("optimize", "--timeout", 15000),
+                                            ("audit", "--agent-timeout", 44100)):
+                command = load(self.experiment / f"steps/{attempt}-{step}/command.json")
+                self.assertEqual(float(command["argv"][command["argv"].index(flag) + 1]), 14400)
+                self.assertEqual(command["timeout_seconds"], outer_limit)
 
     def test_application_slowdown_does_not_block_library_success(self):
         def mutate(component, report):
@@ -159,7 +178,7 @@ class ComponentTests(unittest.TestCase):
         write_json(self.args.baseline / "report.json", self.baseline_report)
         result = experiment(self.records, self.components)
         self.assertEqual(result["status"], "qualified")
-        self.assertEqual(self.calls, ["evaluator", "optimizer", "evaluator", "auditor"])
+        self.assertEqual(self.calls, ["evaluator"] + ["optimizer", "evaluator", "auditor"] * 3)
         self.assertNotIn("library_reduction_target_percent", load(self.args.baseline / "report.json")["configuration"])
 
     def test_target_override_is_forwarded_after_refresh(self):
@@ -174,7 +193,7 @@ class ComponentTests(unittest.TestCase):
         write_json(self.args.baseline / "report.json", self.baseline_report)
         result = experiment(self.records, self.components)
         self.assertEqual(result["status"], "qualified")
-        self.assertEqual(self.calls, ["evaluator", "optimizer", "evaluator", "auditor"])
+        self.assertEqual(self.calls, ["evaluator"] + ["optimizer", "evaluator", "auditor"] * 3)
         task = load(self.experiment / "tasks/attempt-001.json")
         self.assertEqual(task["inputs"]["baseline_ref"]["path"], "initial-inputs/identity.json")
 
@@ -205,7 +224,7 @@ class ComponentTests(unittest.TestCase):
                               findings=[{"claim": "Investigate uncommon inputs"}])
         self.change_report = mutate
         result = experiment(self.records, self.components)
-        self.assertEqual(result["attempts"], 2)
+        self.assertEqual(result["attempts"], 3)
         feedback = load(self.experiment / "tasks/attempt-002-feedback.json")["evidence"]
         self.assertEqual(feedback[0]["contents"]["performance"]["aggregate"]["indexing"]["speedup_ratio"], 1.25)
         self.assertEqual(feedback[1]["contents"]["report"]["findings"][0]["claim"], "Investigate uncommon inputs")
@@ -274,6 +293,26 @@ class ComponentTests(unittest.TestCase):
         self.change_report = mutate
         with self.assertRaisesRegex(ValueError, "different optimization objective"):
             experiment(self.records, self.components)
+
+    def test_stretch_target_report_and_copied_file_must_match_controller(self):
+        for tamper in ("report", "file"):
+            with self.subTest(tamper=tamper):
+                self.setUp()
+                def mutate(component, report):
+                    if component != "optimizer":
+                        return
+                    supplied = report["controller_inputs"]["objective"]
+                    if tamper == "report":
+                        supplied["optimizer_stretch_target"]["time_reduction_percent"] = 40
+                    else:
+                        path = self.experiment / "steps/attempt-001-optimize/output/context/objective.json"
+                        value = load(path)
+                        value["optimizer_stretch_target"]["time_reduction_percent"] = 40
+                        write_json(path, value)
+                        supplied["sha256"] = sha256(path)
+                self.change_report = mutate
+                with self.assertRaisesRegex(ValueError, "different optimization objective"):
+                    experiment(self.records, self.components)
 
     def test_unknown_contributing_candidate_is_rejected(self):
         def mutate(component, report):
